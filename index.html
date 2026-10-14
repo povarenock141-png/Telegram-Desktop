@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#252622">
+  <meta name="description" content="Личное пространство для ботов, документов и готовых результатов.">
+  <title>MAX AI Local — рабочее пространство</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Перейти к содержимому</a>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar" aria-label="Навигация">
+      <a class="brand" href="#workspace" data-action="nav" data-view="workspace" aria-label="MAX AI Local — рабочая область">
+        <span class="brand-mark" aria-hidden="true">M<span></span></span>
+        <span class="brand-name">MAX AI<span>ЛИЧНОЕ ПРОСТРАНСТВО</span></span>
+      </a>
+      <button class="sidebar-search" data-action="search"><span class="search-icon" aria-hidden="true"></span><span>Найти в работе</span><kbd>Ctrl K</kbd></button>
+      <nav class="main-nav" aria-label="Разделы">
+        <button data-action="nav" data-view="team" class="nav-item"><span data-icon="bot"></span><span>Команда</span></button>
+        <button data-action="nav" data-view="workspace" class="nav-item active"><span data-icon="grid"></span><span>Рабочая область</span></button>
+        <button data-action="nav" data-view="results" class="nav-item"><span data-icon="folder"></span><span>Результаты</span></button>
+        <button data-action="nav" data-view="skills" class="nav-item"><span data-icon="spark"></span><span>Навыки</span><span id="skill-count" class="nav-count"></span></button>
+        <button data-action="nav" data-view="development" class="nav-item"><span data-icon="growth"></span><span>Развитие</span><span id="development-count" class="nav-count"></span></button>
+        <button data-action="nav" data-view="routines" class="nav-item"><span data-icon="clock"></span><span>Расписания</span><span id="routine-count" class="nav-count"></span></button>
+      </nav>
+      <div class="sidebar-section-head"><span>МОИ БОТЫ</span><button class="icon-button sidebar-icon" data-action="create-bot" aria-label="Создать бота"><span data-icon="plus"></span></button></div>
+      <div class="bot-list" id="bot-list"><p class="sidebar-empty">Загрузка…</p></div>
+      <div class="sidebar-bottom">
+        <button class="provider-shortcut" data-action="nav" data-view="settings"><span class="connection-dot" id="sidebar-connection"></span><span><strong>Локальная модель</strong><small id="sidebar-provider-text">Проверка подключения</small></span><span data-icon="chevron-right"></span></button>
+        <button class="profile-row" data-action="nav" data-view="settings"><span class="profile-avatar">М</span><span><strong>Моё пространство</strong><small>Данные на этом устройстве</small></span><span data-icon="settings"></span></button>
+      </div>
+    </aside>
+    <button class="sidebar-scrim" id="sidebar-scrim" data-action="close-sidebar" aria-label="Закрыть меню" tabindex="-1"></button>
+    <div class="main-shell">
+      <header class="topbar">
+        <div class="topbar-location"><button class="icon-button mobile-menu" data-action="toggle-sidebar" aria-label="Открыть меню" aria-expanded="false" aria-controls="sidebar"><span data-icon="menu"></span></button><span class="topbar-kicker">MAX AI LOCAL</span><span class="topbar-divider">/</span><span id="topbar-title">Рабочая область</span></div>
+        <div class="topbar-actions"><span class="local-pill"><span></span>На вашем устройстве</span><button class="icon-button topbar-search" data-action="search" aria-label="Поиск"><span data-icon="search"></span></button><button class="icon-button" data-action="nav" data-view="settings" aria-label="Настройки"><span data-icon="settings"></span></button></div>
+      </header>
+      <div class="connection-banner hidden" id="connection-banner" role="status"></div>
+      <main id="main" tabindex="-1"><div class="page-loading"><span class="spinner"></span><p>Открываем рабочее пространство</p></div></main>
+    </div>
+  </div>
+  <dialog class="modal" id="modal" aria-labelledby="modal-title"><div id="modal-content"></div></dialog>
+  <div class="toast-stack" id="toasts" aria-live="polite" aria-atomic="false"></div>
+</body>
+</html>
