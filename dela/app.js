@@ -3,7 +3,7 @@
 
   /* ---------- утилиты ---------- */
   var KEY = 'dela.v1';
-  var APP_VERSION = '11';
+  var APP_VERSION = '12';
   var KINDS = { task: 'задача', deal: 'дело', duty: 'обязанность' };
   var KINDS_ACC = { task: 'задачу', deal: 'дело', duty: 'обязанность' };
   var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -304,7 +304,7 @@
     'Если на экране «Заметки» и фраза похожа на мысль — это заметка. Если в фразе есть поручение со сроком — это дело.',
     'У тебя НЕТ доступа к почте, WhatsApp, Instagram, Telegram, календарю и компьютеру Макса — они ещё не подключены. Если просят проверить их, честно скажи, что это подключим на следующем этапе, и предложи добавить напоминание. Никогда не выдумывай содержимое писем и сообщений.'
   ].join('\n');
-  /* бесплатный AI — Google Gemini (ключ начинается с AIza), платный — Claude (sk-ant-…) */
+  /* бесплатный AI — Google Gemini (любой ключ Google AI Studio), платный — Claude (sk-ant-…) */
   var GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash-lite'];
   /* спросить у Google, какие модели доступны этому ключу, и выбрать быструю */
   function geminiPick(key) {
@@ -778,7 +778,7 @@
         morningAlarm(); toast('Будильник на 08:00', 'Нажми «Добавить» в календаре'); renderMain();
         break;
       case 'ai-setup':
-        ask(S.aiKey ? 'Ключ AI (пусто — отключить)' : 'Вставь ключ AI — Gemini (AIza…) или Claude (sk-ant-…)', S.aiKey || '', function (v) {
+        ask(S.aiKey ? 'Ключ AI (пусто — отключить)' : 'Вставь ключ Google AI Studio целиком', S.aiKey || '', function (v) {
           v = v.replace(/\s+/g, '').replace(/^["'«]+|["'»]+$/g, '');
           S.aiKey = v; S.geminiModels = null; save(); renderMain();
           if (!v) { toast('AI отключён', 'Работаю без AI'); return; }
@@ -789,7 +789,7 @@
               toast('AI подключён ✓', 'Google Gemini, модель ' + ls[0] + '. Спроси что-нибудь в строке «Напиши AI»');
             }).catch(function (e) {
               var m = String(e.message || e);
-              var hint = /^AIza/.test(v) ? m.slice(0, 110) : 'Вставлено «' + v.slice(0, 6) + '…» (' + v.length + ' символов). Ключ Google начинается с AIza и длиной около 39 символов';
+              var hint = m.slice(0, 120);
               toast(aiErrorTitle(m), hint, true);
             });
           } else toast('AI подключён', 'Claude. Спроси что-нибудь в строке «Напиши AI»');
