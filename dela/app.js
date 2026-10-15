@@ -435,6 +435,7 @@
 
     $('demo-row').hidden = !S.tasks.some(function (t) { return t.demo; }) && !S.notes.some(function (n) { return n.demo; });
     $('ai-setup').textContent = S.aiKey ? 'AI подключён · изменить ключ' : 'Подключить AI';
+    $('alarm-btn').textContent = S.alarmSet ? 'План в 08:00 · поставить заново' : 'Будильник плана в 08:00';
   }
 
   /* ---------- отрисовка: Заметки ---------- */
@@ -523,10 +524,35 @@
       'DTSTART:' + st, 'DTEND:' + en, 'SUMMARY:' + t.title.replace(/[,;]/g, ' '), 'DESCRIPTION:' + meta(t)];
     if (t.daily) lines.push('RRULE:FREQ=DAILY');
     lines.push('BEGIN:VALARM', 'TRIGGER:-PT15M', 'ACTION:DISPLAY', 'DESCRIPTION:' + t.title.replace(/[,;]/g, ' '), 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR');
+    saveIcs(lines, 'delo.ics');
+  }
+  function saveIcs(lines, name) {
     var blob = new Blob([lines.join('\r\n')], { type: 'text/calendar' });
     var url = URL.createObjectURL(blob);
-    var a = document.createElement('a'); a.href = url; a.download = 'delo.ics'; document.body.appendChild(a); a.click(); a.remove();
+    var a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+  }
+  /* будильник утреннего плана: ежедневное событие в календаре iPhone в 08:00 со ссылкой на приложение */
+  function morningAlarm() {
+    var appUrl = location.href.split('#')[0];
+    var lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Dela//RU', 'BEGIN:VEVENT', 'UID:morning-plan@dela',
+      'DTSTAMP:' + new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, ''),
+      'DTSTART;TZID=Asia/Baku:' + addDays(today(), 1).replace(/-/g, '') + 'T080000',
+      'DURATION:PT10M', 'RRULE:FREQ=DAILY', 'SUMMARY:План дня — открой «Дела»', 'URL:' + appUrl, 'DESCRIPTION:' + appUrl,
+      'BEGIN:VALARM', 'TRIGGER:PT0M', 'ACTION:DISPLAY', 'DESCRIPTION:План дня готов — открой «Дела»', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'];
+    saveIcs(lines, 'plan-8-00.ics');
+    S.alarmSet = true; save();
+  }
+
+  /* утренний план: при первом открытии за день AI сам составляет план */
+  function morningBrief() {
+    var d = today(), h = new Date().getHours();
+    if (S.briefDate === d || h < 5) return;
+    S.briefDate = d; save();
+    if (current() !== 'main') return;
+    UI.plan = true;
+    if (S.aiKey) command('Утро. Составь мой план на сегодня: главное первым, по времени и срокам, коротко. Ничего не добавляй и не меняй.', 'auto');
+    else { UI.reply = hello() + ' План — ниже.'; renderMain(); }
   }
 
   /* ---------- редактор ---------- */
@@ -646,6 +672,10 @@
       case 'archive-clear':
         if (armed(el)) { S.tasks = S.tasks.filter(function (x) { return x.daily || !x.done; }); save(); UI.archiveOpen = false; renderMain(); }
         break;
+      case 'alarm':
+        if (IN_FRAME) { toast('Будильник плана', 'Работает в приложении с экрана «Домой»'); break; }
+        morningAlarm(); toast('Будильник на 08:00', 'Нажми «Добавить» в календаре'); renderMain();
+        break;
       case 'ai-setup':
         ask(S.aiKey ? 'Ключ AI (пусто — отключить)' : 'Вставь ключ AI — Gemini (AIza…) или Claude (sk-ant-…)', S.aiKey || '', function (v) {
           v = v.trim();
@@ -741,6 +771,8 @@
   route();
   weather();
   setTimeout(startupToast, 1200);
+  setTimeout(morningBrief, 600);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) morningBrief(); });
   setInterval(checkReminders, 30000);
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
 })();
