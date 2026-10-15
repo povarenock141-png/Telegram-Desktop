@@ -3,6 +3,7 @@
 
   /* ---------- утилиты ---------- */
   var KEY = 'dela.v1';
+  var APP_VERSION = '10';
   var KINDS = { task: 'задача', deal: 'дело', duty: 'обязанность' };
   var KINDS_ACC = { task: 'задачу', deal: 'дело', duty: 'обязанность' };
   var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -1013,5 +1014,16 @@
   window.addEventListener('online', function () { SYNC.run(); });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) morningBrief(); });
   setInterval(checkReminders, 30000);
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
+  /* обновления: новая версия подтягивается сама и страница один раз перезагружается */
+  if ('serviceWorker' in navigator) {
+    var hadController = !!navigator.serviceWorker.controller, reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (hadController && !reloaded) { reloaded = true; location.reload(); }
+    });
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
+      reg.update();
+      document.addEventListener('visibilitychange', function () { if (!document.hidden) reg.update(); });
+    }).catch(function () {});
+  }
+  $('app-ver').textContent = 'версия ' + APP_VERSION;
 })();

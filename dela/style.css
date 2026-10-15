@@ -118,6 +118,7 @@ button.box{cursor:pointer}
 .bell.on path:first-child{fill:rgba(138,138,58,.45)}
 .empty{text-align:center;color:var(--muted);font-size:15px;padding:12px 0}
 .add-row{min-height:60px;padding:8px 0 8px 4px;border:none;background:transparent;font-size:17px;display:flex;align-items:center;gap:14px;cursor:pointer;text-align:left}
+.ver{width:100%;text-align:center;font-size:11px;color:#8C887A}
 .foot{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
 .toast-undo{min-height:44px;padding:0 12px;border:1.5px solid var(--ink);border-radius:var(--ha);background:var(--olive-a);font-size:14px;cursor:pointer;flex-shrink:0}
 .archive{display:flex;flex-direction:column;gap:4px}
@@ -164,9 +165,10 @@ button.box{cursor:pointer}
 .sheet-sub{display:flex;justify-content:space-between}
 
 /* voice */
-.mic-fab{position:fixed;right:max(16px, env(safe-area-inset-right, 0px));bottom:calc(env(safe-area-inset-bottom, 0px) + 22px);width:48px;height:48px;padding:0;border:1.8px solid var(--ink);border-radius:var(--hc);background:var(--card);box-shadow:0 4px 12px rgba(28,26,58,.16);display:flex;align-items:center;justify-content:center;z-index:20;cursor:pointer;-webkit-user-select:none;user-select:none}
+.mic-fab{position:fixed;right:max(16px, env(safe-area-inset-right, 0px));bottom:calc(env(safe-area-inset-bottom, 0px) + 22px);width:50px;height:50px;padding:0;border:1.8px solid var(--ink);border-radius:var(--hc);background:var(--ink);box-shadow:0 4px 12px rgba(28,26,58,.16);display:flex;align-items:center;justify-content:center;z-index:20;cursor:pointer;-webkit-user-select:none;user-select:none}
 .mic-fab:active{transform:scale(.94)}
-.mic-fab.on{background:var(--olive-a);animation:micPulse 1.2s ease-in-out infinite}
+.mic-fab .ink{stroke:var(--card);stroke-width:2}
+.mic-fab.on{background:#55551F;animation:micPulse 1.2s ease-in-out infinite}
 @keyframes micPulse{0%,100%{box-shadow:0 0 0 0 rgba(138,138,58,.55)}50%{box-shadow:0 0 0 10px rgba(138,138,58,0)}}
 @media (min-width:520px){.mic-fab{right:calc(50% - 240px + 16px)}}
 .glow{position:fixed;left:0;right:0;bottom:0;height:110px;background:radial-gradient(ellipse at 50% 100%,rgba(138,138,58,.5),transparent 70%);pointer-events:none;z-index:19;animation:glow 1s ease-in-out infinite}
