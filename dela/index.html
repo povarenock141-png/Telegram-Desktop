@@ -23,6 +23,7 @@
   <div id="toast" class="toast" role="status" hidden>
     <svg width="20" height="20" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M6.2 16.8c.9-1.2 1.2-2.4 1.1-4.6-.1-3 1.9-5.4 4.7-5.5 2.9-.1 4.9 2.2 4.8 5.2 0 2.3.3 3.6 1.1 4.8z"/><path d="M10.3 19.6c.9 1 2.6 1 3.5 0M12.1 4.2v2.4"/></svg>
     <div class="toast-text"><div id="toast-title" class="toast-title"></div><div id="toast-sub" class="toast-sub"></div></div>
+    <button type="button" id="toast-undo" class="toast-undo" data-act="undo" hidden>Вернуть</button>
     <button type="button" class="icon-btn" data-act="close-toast" aria-label="Закрыть уведомление"><svg width="18" height="18" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M6 6.2c4 3.7 8 7.6 12 11.6M18 6c-3.9 4.1-7.9 8-12 12"/></svg></button>
   </div>
 
@@ -142,7 +143,12 @@
       Новое дело
     </button>
 
-    <div id="demo-row" class="demo-row" hidden><button type="button" class="link-btn" data-act="clear-demo">Убрать примеры</button></div>
+    <div id="archive" class="archive"></div>
+
+    <div class="foot">
+      <button type="button" class="link-btn" id="ai-setup" data-act="ai-setup">Подключить AI</button>
+      <button type="button" class="link-btn" id="demo-row" data-act="clear-demo" hidden>Убрать примеры</button>
+    </div>
   </main>
 
   <!-- ЗАМЕТКИ -->
@@ -198,7 +204,7 @@
   <!-- Короткий ввод (место, стикер) -->
   <form id="mini" class="sheet hand-a" hidden autocomplete="off">
     <div class="sheet-grip" aria-hidden="true"></div>
-    <label class="fld"><span id="mini-label">Текст</span><input id="mini-input" type="text"></label>
+    <label class="fld"><span id="mini-label">Текст</span><input id="mini-input" type="text" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
     <div class="sheet-actions">
       <button type="submit" class="big-btn hand-a">Готово</button>
       <div class="sheet-sub"><button type="button" class="link-btn" data-act="close-mini">Отмена</button></div>

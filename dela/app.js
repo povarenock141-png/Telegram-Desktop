@@ -4,6 +4,7 @@
   /* ---------- утилиты ---------- */
   var KEY = 'dela.v1';
   var KINDS = { task: 'задача', deal: 'дело', duty: 'обязанность' };
+  var KINDS_ACC = { task: 'задачу', deal: 'дело', duty: 'обязанность' };
   var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
   var WD = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
   var WD_ACC = ['воскресенье', 'понедельник', 'вторник', 'среду', 'четверг', 'пятницу', 'субботу'];
@@ -123,10 +124,10 @@
     var m;
     if (/послезавтра/.test(low)) r.date = addDays(today(), 2);
     else if (/завтра/.test(low)) r.date = addDays(today(), 1);
-    else if ((m = low.match(/\bв (понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье)\b/))) r.date = nextWeekday(WD_ACC.indexOf(m[1]));
+    else if ((m = low.match(/(?:^|\s)в (понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье)(?=\s|$|[,.])/))) r.date = nextWeekday(WD_ACC.indexOf(m[1]));
     if (/(ежедневно|каждый день)/.test(low)) { r.daily = true; r.kind = 'duty'; }
     if ((m = low.match(/до (\d{1,2})(?:[:.](\d{2}))?(?!\d)/))) r.due = pad(+m[1]) + ':' + (m[2] || '00');
-    if ((m = low.match(/(?:^|\s)в (\d{1,2})[:.](\d{2})/)) || (m = low.match(/(?:^|\s)в (\d{1,2})(?:\s*(?:час|ч)\b)/))) r.time = pad(+m[1]) + ':' + (m[2] || '00');
+    if ((m = low.match(/(?:^|\s)в (\d{1,2})[:.](\d{2})/)) || (m = low.match(/(?:^|\s)в (\d{1,2})(?:\s*(?:часов|часа|час|ч)(?=\s|$|[,.]))/))) r.time = pad(+m[1]) + ':' + (m[2] || '00');
     if (r.kind !== 'duty' && /(позвонить|заказ|оплат|ответить|написать|купить|отправить|забрать|отдать|встреч)/.test(low)) r.kind = 'deal';
     if (/обязанност/.test(low)) r.kind = 'duty';
     var title = raw
@@ -135,7 +136,7 @@
       .replace(/\s*в (понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье)\s*/ig, ' ')
       .replace(/\s*(ежедневно|каждый день)\s*/ig, ' ')
       .replace(/\s*до \d{1,2}([:.]\d{2})?(?!\d)\s*/ig, ' ')
-      .replace(/(^|\s)в \d{1,2}([:.]\d{2})?(\s*(час|ч)\b)?/ig, ' ')
+      .replace(/(^|\s)в \d{1,2}([:.]\d{2})?(\s*(часов|часа|час|ч)(?=\s|$|[,.]))?/ig, ' ')
       .replace(/\s{2,}/g, ' ').replace(/[,.\s]+$/, '').trim();
     r.title = cap(title || raw);
     return r;
@@ -157,29 +158,151 @@
     S.notes.unshift(n); save();
     return n;
   }
+  function taskReply(t) {
+    return 'Добавил ' + KINDS_ACC[t.kind] + ': «' + t.title + '»' + (t.daily ? ', ежедневно' : t.date !== today() ? ', ' + dateLabel(t.date) : '') + (t.time ? ', в ' + t.time : '') + (t.due ? ', до ' + t.due : '') + '.';
+  }
+  function showReply(text, heard) {
+    UI.heard = heard || ''; UI.reply = text;
+    if (current() === 'notes') { renderNotes(); toast('AI', text); } else renderMain();
+  }
   function command(text, source) {
     text = (text || '').trim();
     if (!text) return;
-    var low = text.toLowerCase();
-    var reply;
-    if (current() === 'notes' && source === 'voice') {
-      var n0 = addNote(text, false, true);
-      toast('Заметка записана', n0.body.slice(0, 60));
-      renderNotes(); flashNote(n0.id);
-      return;
-    }
-    var nm = text.match(/^((?:(?:запиши|заметка|идея|идею|запомни|стикер)[:,]?\s*)+)(.+)$/i);
+    if (UI.mode === 'think') return;
+    if (S.aiKey) { aiCommand(text, source); return; }
+    var reply = localCommand(text, source);
+    think(function () { showReply(reply, source === 'voice' ? text : ''); });
+  }
+
+  /* локальный разбор — когда AI не подключён */
+  function localCommand(text, source) {
+    var low = text.toLowerCase().replace(/[?!.]+$/, '').trim();
+    var isQ = /\?\s*$/.test(text) || /^(что|как|когда|сколько|какие|какой|какое|где|почему|зачем|кто|есть ли|можно ли|покажи|расскажи)(?=\s|$)/.test(low);
+    var nm = text.match(/^((?:(?:запиши|записать|заметка|заметку|идея|идею|запомни|стикер)[:,]?\s*)+)(.+)$/i);
     if (nm) {
       var n = addNote(nm[2], /стикер/i.test(nm[1]) || nm[2].length <= 40, source === 'voice');
-      reply = 'Записал в заметки' + (n.pinned ? ' и приклеил стикер' : '') + ': «' + n.body.slice(0, 50) + (n.body.length > 50 ? '…' : '') + '».';
-    } else if (/^(что|какие|какой).*(сегодня|план)|^план/.test(low)) {
-      UI.plan = true;
-      reply = hello();
-    } else {
-      var t = addTaskFrom(text, source === 'voice' ? { voice: true } : null);
-      reply = 'Добавил ' + KINDS[t.kind] + ': «' + t.title + '»' + (t.daily ? ', ежедневно' : t.date !== today() ? ', ' + dateLabel(t.date) : '') + (t.time ? ', в ' + t.time : '') + (t.due ? ', до ' + t.due : '') + '.';
+      if (current() === 'notes') flashNote(n.id);
+      return 'Записал в заметки' + (n.pinned ? ' и приклеил стикер' : '') + ': «' + n.body.slice(0, 50) + (n.body.length > 50 ? '…' : '') + '».';
     }
-    think(function () { UI.heard = source === 'voice' ? text : ''; UI.reply = reply; renderMain(); });
+    var dm = low.match(/^(выполнил|сделал|готово|закрой|отметь|закрыл)[:,]?\s*(.+)$/);
+    if (dm) {
+      var hit = findByWords(dm[2]);
+      if (hit) { complete(hit, true); return 'Отметил выполненным: «' + hit.title + '». Убрал в архив.'; }
+      return 'Не нашёл дело «' + dm[2] + '».';
+    }
+    if (isQ) {
+      UI.plan = /план|сегодня|по порядку/.test(low) || UI.plan;
+      if (/дальше|следующ|ближайш/.test(low)) { var nx = nextTimed(); return nx ? 'Следующее: «' + nx.title + '» — ' + (nx.time ? 'в ' + nx.time : 'до ' + nx.due) + '.' : 'Дел со временем на сегодня больше нет.'; }
+      if (/сколько/.test(low)) { var left = todayTasks().filter(function (t) { return !isDone(t); }).length; return 'Осталось ' + left + ' ' + pluralDel(left) + ' на сегодня, выполнено ' + todayTasks().filter(isDone).length + '.'; }
+      if (/завтра/.test(low)) { var tm = S.tasks.filter(function (t) { return !isDone(t) && (t.daily || t.date === addDays(today(), 1)); }); return tm.length ? 'Завтра: ' + tm.map(function (t) { return t.title; }).join(', ') + '.' : 'На завтра пока ничего.'; }
+      if (/главн|важн/.test(low)) { var mt = mainTask(); return mt ? 'Главное сейчас: «' + mt.title + '».' : 'Главное на сегодня закрыто.'; }
+      if (/план|сегодня|дела|задач/.test(low)) return hello();
+      return 'На такие вопросы ответит AI — подключи его кнопкой «Подключить AI» внизу экрана. Сейчас я умею: дела, заметки, план, «что дальше», «сколько осталось».';
+    }
+    if (current() === 'notes') { var nn = addNote(text, false, source === 'voice'); flashNote(nn.id); return 'Записал в заметки.'; }
+    return taskReply(addTaskFrom(text, source === 'voice' ? { voice: true } : null));
+  }
+  function findByWords(q) {
+    var words = q.toLowerCase().split(/\s+/).filter(function (w) { return w.length > 2; }).map(function (w) { return w.slice(0, Math.max(3, w.length - 2)); });
+    var best = null, score = 0;
+    S.tasks.forEach(function (t) {
+      if (isDone(t)) return;
+      var tl = t.title.toLowerCase(), s = 0;
+      words.forEach(function (w) { if (tl.indexOf(w) >= 0) s++; });
+      if (s > score) { score = s; best = t; }
+    });
+    return score ? best : null;
+  }
+
+  /* настоящий AI — Claude через API, ключ хранится только на телефоне */
+  var AI_MODEL = 'claude-haiku-5-5';
+  function aiContext() {
+    var d = new Date();
+    var tasks = S.tasks.filter(function (t) { return !isDone(t); }).map(function (t) {
+      return { id: t.id, title: t.title, kind: t.kind, date: t.daily ? 'каждый день' : t.date, time: t.time || null, due: t.due || null };
+    });
+    var done = S.tasks.filter(isDone).slice(0, 15).map(function (t) { return t.title; });
+    var notes = S.notes.slice(0, 20).map(function (n) { return { id: n.id, text: n.body.slice(0, 200), sticker: n.pinned }; });
+    return 'Сегодня: ' + WD[d.getDay()] + ', ' + today() + ', время ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ' (Баку).\n' +
+      'Экран: ' + (current() === 'notes' ? 'Заметки' : 'Дела') + '.\n' +
+      'Открытые дела: ' + JSON.stringify(tasks) + '\nВыполнено недавно: ' + JSON.stringify(done) + '\nЗаметки: ' + JSON.stringify(notes);
+  }
+  var AI_SYSTEM = [
+    'Ты — личный AI-помощник Макса, бренд-шефа ресторанов Novikov Group в Баку. Приложение «Дела»: дела, обязанности, заметки, стикеры.',
+    'Пойми, чего хочет Макс, и ответь ТОЛЬКО JSON без пояснений вокруг: {"reply": "...", "actions": [...]}.',
+    'reply — коротко по-русски, 1–3 предложения, по делу, без воды. Если это вопрос — ответь на него по существу (используй список дел, если вопрос про них, или свои знания).',
+    'actions — что сделать в приложении (может быть пустым):',
+    '{"type":"add_task","title":"…","kind":"task|deal|duty","date":"ГГГГ-ММ-ДД","daily":false,"time":"ЧЧ:ММ или пусто","due":"ЧЧ:ММ или пусто"} — title чистый и короткий, без слов «напомни», дат и времени.',
+    '{"type":"add_note","text":"…","sticker":false} — идея, мысль, информация для памяти. sticker=true для коротких напоминалок.',
+    '{"type":"complete","id":"…"} — Макс говорит, что что-то сделал.',
+    '{"type":"delete","id":"…"}, {"type":"update","id":"…", поля как у add_task} — перенести, переименовать, удалить.',
+    '{"type":"show_plan"} — показать план дня.',
+    'kind: task — задача (своя работа), deal — дело (звонок, заказ, письмо, встреча), duty — обязанность (регулярное, по должности).',
+    'Одна фраза может дать несколько действий. Вопрос — это не задача и не заметка: просто ответь. Не создавай дубли уже существующих дел.',
+    'Если на экране «Заметки» и фраза похожа на мысль — это заметка. Если в фразе есть поручение со сроком — это дело.'
+  ].join('\n');
+  function aiCommand(text, source) {
+    setMode('think');
+    fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': S.aiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: AI_MODEL, max_tokens: 700, system: AI_SYSTEM, messages: [{ role: 'user', content: aiContext() + '\n\nМакс говорит: ' + text }] })
+    }).then(function (r) {
+      return r.json().then(function (j) { if (!r.ok) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status)); return j; });
+    }).then(function (j) {
+      var raw = (j.content || []).map(function (c) { return c.text || ''; }).join('');
+      var m = raw.match(/\{[\s\S]*\}/);
+      var out = m ? JSON.parse(m[0]) : { reply: raw, actions: [] };
+      applyActions(out.actions || [], source);
+      setMode('idle');
+      showReply(out.reply || 'Готово.', source === 'voice' ? text : '');
+    }).catch(function (err) {
+      setMode('idle');
+      var msg = String(err && err.message || err);
+      if (/auth|api.key|401|invalid x-api-key/i.test(msg)) toast('AI: ключ не подходит', 'Проверь ключ — «Изменить ключ AI» внизу');
+      else if (/credit|balance|billing/i.test(msg)) toast('AI: закончился баланс', 'Пополни счёт на console.anthropic.com');
+      else toast('AI недоступен', 'Сделал без AI. ' + msg.slice(0, 60));
+      showReply(localCommand(text, source), source === 'voice' ? text : '');
+    });
+  }
+  function applyActions(acts, source) {
+    acts.forEach(function (a) {
+      var t;
+      try {
+        if (a.type === 'add_task' && a.title) {
+          t = { id: uid(), title: cap(a.title), kind: KINDS[a.kind] ? a.kind : 'task', daily: !!a.daily, date: /^\d{4}-\d{2}-\d{2}$/.test(a.date || '') ? a.date : today(), time: a.time || '', due: a.due || '' };
+          t.remind = !!(t.time || t.due); if (source === 'voice') t.voice = true;
+          S.tasks.unshift(t);
+        } else if (a.type === 'add_note' && a.text) {
+          var n = addNote(a.text, !!a.sticker, source === 'voice');
+          if (current() === 'notes') setTimeout(function () { flashNote(n.id); }, 50);
+        } else if (a.type === 'complete' && (t = find(a.id))) {
+          complete(t, true);
+        } else if (a.type === 'delete' && (t = find(a.id))) {
+          S.tasks = S.tasks.filter(function (x) { return x !== t; });
+        } else if (a.type === 'update' && (t = find(a.id))) {
+          ['title', 'kind', 'date', 'time', 'due', 'daily'].forEach(function (k) { if (a[k] !== undefined && a[k] !== null) t[k] = a[k]; });
+          t.remind = !!(t.time || t.due); delete t.demo;
+        } else if (a.type === 'show_plan') {
+          UI.plan = true;
+        }
+      } catch (e) { /* пропускаем кривое действие */ }
+    });
+    save();
+  }
+
+  /* выполнение и архив */
+  var lastDone = null;
+  function complete(t, quiet) {
+    if (t.daily) t.doneOn = today(); else { t.done = true; t.doneAt = Date.now(); }
+    if (UI.toastFor === t.id) $('toast').hidden = true;
+    lastDone = t.id;
+    save();
+    if (!quiet) toast('Готово: ' + t.title, t.daily ? 'Вернётся завтра' : 'Убрал в архив', false, null, true);
+  }
+  function uncomplete(t) {
+    if (t.daily) t.doneOn = ''; else { t.done = false; delete t.doneAt; }
+    save();
   }
 
   /* ---------- режим шара ---------- */
@@ -251,12 +374,11 @@
     }).join('');
 
     var shown = S.tasks.filter(function (t) {
+      if (isDone(t)) return false;
       if (UI.filter === 'today') return isToday(t);
       if (UI.filter === 'all') return true;
       return t.kind === UI.filter;
     }).slice().sort(function (a, b) {
-      var da = isDone(a) ? 1 : 0, db = isDone(b) ? 1 : 0;
-      if (da !== db) return da - db;
       var ka = (a.daily ? today() : a.date) + (refTime(a) || '99'), kb = (b.daily ? today() : b.date) + (refTime(b) || '99');
       return ka < kb ? -1 : ka > kb ? 1 : 0;
     });
@@ -270,9 +392,19 @@
         (al ? '<span class="item-alert' + (al.late ? ' late' : '') + '">' + esc(al.text) + '</span>' : '') + '</button>' +
         (refTime(t) ? '<button type="button" class="bell' + (t.remind ? ' on' : '') + '" data-act="bell" data-id="' + t.id + '" aria-pressed="' + !!t.remind + '" aria-label="' + (t.remind ? 'Выключить напоминание' : 'Включить напоминание') + '"><svg width="22" height="22" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M6.2 16.8c.9-1.2 1.2-2.4 1.1-4.6-.1-3 1.9-5.4 4.7-5.5 2.9-.1 4.9 2.2 4.8 5.2 0 2.3.3 3.6 1.1 4.8z"/><path d="M10.3 19.6c.9 1 2.6 1 3.5 0M12.1 4.2v2.4"/></svg></button>' : '') +
         '</div>';
-    }).join('') : '<div class="empty">' + (UI.filter === 'today' ? 'На сегодня пусто — скажи AI, что сделать' : 'Здесь пока пусто') + '</div>';
+    }).join('') : '<div class="empty">' + (UI.filter === 'today' ? 'На сегодня всё сделано' : 'Здесь пока пусто') + '</div>';
+
+    var arch = S.tasks.filter(isDone).sort(function (a, b) { return (b.doneAt || Date.now()) - (a.doneAt || Date.now()); });
+    $('archive').innerHTML = arch.length ? '<button type="button" class="archive-head" data-act="archive-toggle" aria-expanded="' + !!UI.archiveOpen + '">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M9 5.2c2.4 2.2 4.6 4.4 6.8 6.9-2.2 2.3-4.4 4.5-6.8 6.7"/></svg>Архив · ' + arch.length + '</button>' +
+      (UI.archiveOpen ? arch.map(function (t) {
+        var when = t.daily ? 'сегодня, вернётся завтра' : t.doneAt ? dateLabel(dstr(new Date(t.doneAt))) : '';
+        return '<div class="item is-done"><button type="button" class="circle done" data-act="restore" data-id="' + t.id + '" aria-label="Вернуть: ' + esc(t.title) + '"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12.8c1.6 1.2 3 2.6 4.4 4.6 2.6-4.6 6-8.6 10.8-12.6" fill="none" stroke="#1C1A3A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' +
+          '<div class="item-body"><span class="item-title">' + esc(t.title) + '</span><span class="item-meta">' + esc(KINDS[t.kind] + ' · выполнено ' + when) + '</span></div></div>';
+      }).join('') + '<button type="button" class="link-btn archive-clear" data-act="archive-clear">Очистить архив</button>' : '') : '';
 
     $('demo-row').hidden = !S.tasks.some(function (t) { return t.demo; }) && !S.notes.some(function (n) { return n.demo; });
+    $('ai-setup').textContent = S.aiKey ? 'AI подключён · изменить ключ' : 'Подключить AI';
   }
 
   /* ---------- отрисовка: Заметки ---------- */
@@ -310,13 +442,14 @@
 
   /* ---------- уведомление ---------- */
   var toastTimer = null;
-  function toast(title, sub, keep, taskId) {
+  function toast(title, sub, keep, taskId, undo) {
     UI.toastFor = taskId || null;
     $('toast-title').textContent = title;
     $('toast-sub').textContent = sub || '';
+    $('toast-undo').hidden = !undo;
     $('toast').hidden = false;
     clearTimeout(toastTimer);
-    if (!keep) toastTimer = setTimeout(function () { $('toast').hidden = true; }, 4500);
+    if (!keep) toastTimer = setTimeout(function () { $('toast').hidden = true; }, undo ? 6000 : 4500);
   }
   function startupToast() {
     var list = todayTasks().filter(function (t) { return !isDone(t) && t.remind && refTime(t); });
@@ -468,9 +601,28 @@
       case 'close-toast': $('toast').hidden = true; break;
       case 'toggle':
         t = find(id); if (!t) break;
-        if (t.daily) t.doneOn = isDone(t) ? '' : today(); else t.done = !t.done;
-        if (isDone(t) && UI.toastFor === t.id) $('toast').hidden = true;
-        save(); renderMain(); break;
+        var row = el.closest('.item');
+        el.classList.add('done');
+        if (row) { row.style.transition = 'opacity .35s'; row.style.opacity = '0'; }
+        setTimeout(function () { complete(t); renderMain(); }, 350);
+        break;
+      case 'restore':
+        t = find(id); if (t) { uncomplete(t); renderMain(); toast('Вернул: ' + t.title, ''); }
+        break;
+      case 'undo':
+        t = find(lastDone); if (t) { uncomplete(t); lastDone = null; $('toast').hidden = true; renderMain(); }
+        break;
+      case 'archive-toggle': UI.archiveOpen = !UI.archiveOpen; renderMain(); break;
+      case 'archive-clear':
+        if (armed(el)) { S.tasks = S.tasks.filter(function (x) { return x.daily || !x.done; }); save(); UI.archiveOpen = false; renderMain(); }
+        break;
+      case 'ai-setup':
+        ask(S.aiKey ? 'Ключ Claude API (пусто — отключить AI)' : 'Вставь ключ Claude API (sk-ant-…)', S.aiKey || '', function (v) {
+          v = v.trim();
+          S.aiKey = v; save(); renderMain();
+          toast(v ? 'AI подключён' : 'AI отключён', v ? 'Спроси что-нибудь в строке «Напиши AI»' : 'Работаю без AI');
+        });
+        break;
       case 'bell':
         t = find(id); t.remind = !t.remind; if (t.remind) askNotify(); save(); renderMain(); break;
       case 'edit': openSheet(find(id)); break;

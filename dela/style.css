@@ -118,7 +118,14 @@ button.box{cursor:pointer}
 .bell.on path:first-child{fill:rgba(138,138,58,.45)}
 .empty{text-align:center;color:var(--muted);font-size:15px;padding:12px 0}
 .add-row{min-height:60px;padding:8px 0 8px 4px;border:none;background:transparent;font-size:17px;display:flex;align-items:center;gap:14px;cursor:pointer;text-align:left}
-.demo-row{text-align:center}
+.foot{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
+.toast-undo{min-height:44px;padding:0 12px;border:1.5px solid var(--ink);border-radius:var(--ha);background:var(--olive-a);font-size:14px;cursor:pointer;flex-shrink:0}
+.archive{display:flex;flex-direction:column;gap:4px}
+.archive-head{min-height:44px;border:none;background:transparent;font-size:15px;color:var(--muted);display:flex;align-items:center;gap:8px;cursor:pointer;padding:0 4px;text-align:left}
+.archive-head svg{transition:transform .2s}
+.archive-head[aria-expanded="true"] svg{transform:rotate(90deg)}
+.archive .item{opacity:.7}
+.archive-clear{align-self:center}
 .link-btn{border:none;background:transparent;font-size:14px;color:var(--muted);text-decoration:underline;min-height:44px;padding:0 8px;cursor:pointer}
 .link-btn.danger{color:var(--red)}
 
