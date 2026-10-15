@@ -3,7 +3,7 @@
 
   /* ---------- утилиты ---------- */
   var KEY = 'dela.v1';
-  var APP_VERSION = '12';
+  var APP_VERSION = '13';
   var KINDS = { task: 'задача', deal: 'дело', duty: 'обязанность' };
   var KINDS_ACC = { task: 'задачу', deal: 'дело', duty: 'обязанность' };
   var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -773,6 +773,16 @@
         if (armed(el)) { S.tasks = S.tasks.filter(function (x) { return x.daily || !x.done; }); save(); UI.archiveOpen = false; renderMain(); }
         break;
       case 'sync': SYNC.press(); break;
+      case 'copy-link':
+        var lo = $('link-out'); lo.select(); lo.setSelectionRange(0, 99999);
+        (navigator.clipboard ? navigator.clipboard.writeText(lo.value) : Promise.reject()).then(function () { toast('Ссылка скопирована', 'Открой её на другом устройстве'); }, function () { try { document.execCommand('copy'); toast('Ссылка скопирована', ''); } catch (e2) { toast('Скопируй ссылку вручную', ''); } });
+        break;
+      case 'share-link':
+        if (navigator.share) navigator.share({ title: 'Дела — синхронизация', url: $('link-out').value }).catch(function () {});
+        else toast('Скопируй ссылку', 'Кнопка «Копировать»');
+        break;
+      case 'sync-off': if (armed(el)) { $('link-sheet').hidden = true; $('sheet-bg').hidden = true; SYNC.off(); } break;
+      case 'close-link': $('link-sheet').hidden = true; $('sheet-bg').hidden = true; break;
       case 'alarm':
         if (IN_FRAME) { toast('Будильник плана', 'Работает в приложении с экрана «Домой»'); break; }
         morningAlarm(); toast('Будильник на 08:00', 'Нажми «Добавить» в календаре'); renderMain();
@@ -799,7 +809,7 @@
         t = find(id); t.remind = !t.remind; if (t.remind) askNotify(); save(); renderMain(); break;
       case 'edit': openSheet(find(id)); break;
       case 'new-task': openSheet(null); break;
-      case 'close-sheet': closeSheet(); closeMini(); break;
+      case 'close-sheet': closeSheet(); closeMini(); $('link-sheet').hidden = true; break;
       case 'close-mini': closeMini(); break;
       case 'delete-task':
         if (UI.editing && armed(el)) { delete el.dataset.armed; el.textContent = 'Удалить'; S.tasks = S.tasks.filter(function (x) { return x.id !== UI.editing; }); save(); closeSheet(); renderMain(); toast('Дело удалено', ''); }
@@ -886,131 +896,117 @@
   if (S.aiKey && !/^sk-ant/.test(S.aiKey) && !S.geminiModels) geminiPick(S.aiKey).then(function (ls) { S.geminiModels = ls; save(); }).catch(function () { /* проверим при первом запросе */ });
   setTimeout(morningBrief, 600);
 
-  /* ---------- синхронизация через Google Drive (скрытая папка приложения) ---------- */
-  var GOOGLE_CLIENT_ID = '';
+  /* ---------- синхронизация: зашифрованная копия в облачном хранилище textdb.dev ----------
+     Ключ шифрования есть только на устройствах Макса (в ссылке подключения), хранилище видит только шифр. */
   var SYNC = (function () {
-    var TOKEN_KEY = 'dela.gtoken', FILE = 'dela-sync.json';
-    var SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
-    var busy = false, again = false, timer = null;
-    function appUrl() { return location.origin + location.pathname; }
-    function getToken() {
-      try { var t = JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null'); if (t && t.exp > Date.now() + 60e3) return t.v; } catch (e) { /* нет */ }
-      return null;
+    var BASE = 'https://textdb.dev/api/data/';
+    var busy = false, again = false, timer = null, cryptoKey = null;
+    function b64(buf) { var s = '', a = new Uint8Array(buf); for (var i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+    function unb64(t) { t = t.replace(/-/g, '+').replace(/_/g, '/'); while (t.length % 4) t += '='; var s = atob(t), a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; }
+    function on() { return !!(S.sync && S.sync.id && S.sync.k); }
+    function key() {
+      if (cryptoKey) return Promise.resolve(cryptoKey);
+      return crypto.subtle.importKey('raw', unb64(S.sync.k), 'AES-GCM', false, ['encrypt', 'decrypt']).then(function (k) { cryptoKey = k; return k; });
     }
-    function on() { return !!(S.sync && S.sync.on && GOOGLE_CLIENT_ID); }
-    function auth(silent) {
-      if (!GOOGLE_CLIENT_ID) return;
-      S.sync = S.sync || {}; S.sync.on = true; S.sync.tried = Date.now(); store();
-      var p = new URLSearchParams({ client_id: GOOGLE_CLIENT_ID, redirect_uri: appUrl(), response_type: 'token', scope: SCOPE, include_granted_scopes: 'true', state: 'dela-sync' });
-      if (silent) p.set('prompt', 'none');
-      if (S.sync.email) p.set('login_hint', S.sync.email);
-      location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + p.toString();
+    function enc(obj) {
+      var iv = crypto.getRandomValues(new Uint8Array(12));
+      return key().then(function (k) { return crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, k, new TextEncoder().encode(JSON.stringify(obj))); })
+        .then(function (ct) { return 'dela1.' + b64(iv) + '.' + b64(ct); });
     }
-    function readRedirect() {
-      if (location.hash.indexOf('state=dela-sync') < 0) return;
-      var h = new URLSearchParams(location.hash.slice(1));
-      history.replaceState(null, '', appUrl());
-      if (h.get('access_token')) {
-        try { localStorage.setItem(TOKEN_KEY, JSON.stringify({ v: h.get('access_token'), exp: Date.now() + (+h.get('expires_in') || 3600) * 1000 })); } catch (e) { /* нет места */ }
-        S.sync = S.sync || {}; S.sync.on = true; S.sync.needLogin = false; store();
-        S.sync.justLinked = true;
-      } else if (h.get('error')) {
-        S.sync = S.sync || {}; S.sync.needLogin = true; store();
-      }
+    function dec(text) {
+      var parts = (text || '').trim().split('.');
+      if (parts.length !== 3 || parts[0] !== 'dela1') return Promise.resolve(null);
+      return key().then(function (k) { return crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(parts[1]) }, k, unb64(parts[2])); })
+        .then(function (pt) { return JSON.parse(new TextDecoder().decode(pt)); });
     }
-    function api(method, url, body, type) {
-      var tok = getToken();
-      if (!tok) return Promise.reject(new Error('no-token'));
-      var o = { method: method, headers: { Authorization: 'Bearer ' + tok } };
-      if (body !== undefined) { o.body = body; o.headers['Content-Type'] = type || 'application/json'; }
-      return fetch(url, o).then(function (r) {
-        if (r.status === 401) { try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* нет */ } throw new Error('no-token'); }
-        if (!r.ok) return r.text().then(function (t) { throw new Error('drive ' + r.status + ' ' + t.slice(0, 80)); });
-        return r.status === 204 ? null : r.json();
-      });
+    function pull() {
+      return fetch(BASE + S.sync.id, { cache: 'no-store' }).then(function (r) {
+        if (r.status === 404) return '';
+        if (!r.ok) throw new Error('хранилище ответило ' + r.status);
+        return r.text();
+      }).then(function (t) { return t ? dec(t) : null; });
     }
-    function findFile() {
-      if (S.sync.fileId) return Promise.resolve(S.sync.fileId);
-      return api('GET', 'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name)&q=' + encodeURIComponent("name='" + FILE + "'")).then(function (j) {
-        var f = j.files && j.files[0];
-        if (f) { S.sync.fileId = f.id; store(); return f.id; }
-        return null;
-      });
+    function push() {
+      return enc(payload()).then(function (body) {
+        return fetch(BASE + S.sync.id, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: body });
+      }).then(function (r) { if (!r.ok) throw new Error('запись не прошла: ' + r.status); });
     }
-    function create() {
-      var b = 'dela' + Date.now();
-      var body = '--' + b + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify({ name: FILE, parents: ['appDataFolder'] }) +
-        '\r\n--' + b + '\r\nContent-Type: application/json\r\n\r\n' + JSON.stringify(payload()) + '\r\n--' + b + '--';
-      return api('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', body, 'multipart/related; boundary=' + b)
-        .then(function (j) { S.sync.fileId = j.id; store(); });
-    }
+    function rerender() { if (current() === 'notes') renderNotes(); else renderMain(); }
     function run() {
-      if (!on() || !navigator.onLine) return Promise.resolve();
-      if (!getToken()) {
-        if (!S.sync.needLogin && Date.now() - (S.sync.tried || 0) > 5 * 60e3) auth(true);
-        render(); return Promise.resolve();
-      }
+      if (!on() || !navigator.onLine) { render(); return Promise.resolve(); }
       if (busy) { again = true; return Promise.resolve(); }
       busy = true;
-      return findFile().then(function (id) {
-        if (!id) {
-          if (S.sync.firstLink) dropDemo();
-          return create();
+      return pull().then(function (R) {
+        var before = JSON.stringify([S.tasks, S.notes, S.place, S.aiKey]);
+        if (R) {
+          if (S.sync.joining && ((R.tasks || []).length || (R.notes || []).length)) {
+            S.tasks = S.tasks.filter(function (x) { return !x.demo; });
+            S.notes = S.notes.filter(function (x) { return !x.demo; });
+            takeSnap();
+          }
+          mergeRemote(R);
         }
-        return api('GET', 'https://www.googleapis.com/drive/v3/files/' + id + '?alt=media').then(function (R) {
-          if (S.sync.firstLink && R && ((R.tasks || []).length || (R.notes || []).length)) dropDemo();
-          var before = JSON.stringify([S.tasks, S.notes, S.place, S.aiKey]);
-          var remoteStr = JSON.stringify([R.tasks, R.notes, R.place, R.aiKey]);
-          mergeRemote(R || {});
-          var after = JSON.stringify([S.tasks, S.notes, S.place, S.aiKey]);
-          if (after !== before) rerender();
-          if (after !== remoteStr) return api('PATCH', 'https://www.googleapis.com/upload/drive/v3/files/' + id + '?uploadType=media', JSON.stringify(payload()));
-        }).catch(function (e) {
-          if (/drive 404/.test(e.message)) { S.sync.fileId = null; store(); }
-          throw e;
-        });
+        if (JSON.stringify([S.tasks, S.notes, S.place, S.aiKey]) !== before) rerender();
+        var remoteStr = R ? JSON.stringify([R.tasks, R.notes, R.place, R.aiKey]) : '';
+        if (JSON.stringify([S.tasks, S.notes, S.place, S.aiKey]) !== remoteStr) return push();
       }).then(function () {
-        S.sync.firstLink = false; S.sync.last = Date.now(); S.sync.err = ''; store();
+        S.sync.joining = false; S.sync.last = Date.now(); S.sync.err = ''; store();
       }).catch(function (e) {
-        S.sync.err = e.message === 'no-token' ? '' : e.message; store();
+        S.sync.err = String(e && e.message || e); store();
       }).then(function () {
         busy = false; render();
         if (again) { again = false; return run(); }
       });
     }
-    function dropDemo() {
-      S.tasks = S.tasks.filter(function (x) { return !x.demo; });
-      S.notes = S.notes.filter(function (x) { return !x.demo; });
-      takeSnap(); store();
-    }
-    function rerender() { if (current() === 'notes') renderNotes(); else renderMain(); }
     function render() {
       var b = $('sync-btn'); if (!b) return;
-      if (!GOOGLE_CLIENT_ID) { b.hidden = true; return; }
       b.hidden = false;
       var s = S.sync || {};
-      if (!s.on) b.textContent = 'Синхронизация с Google';
-      else if (s.needLogin) b.textContent = 'Google: войти снова';
-      else if (s.err) b.textContent = 'Google: ошибка, нажми ещё раз';
-      else if (s.last) b.textContent = 'Google ✓ ' + pad(new Date(s.last).getHours()) + ':' + pad(new Date(s.last).getMinutes());
-      else b.textContent = 'Google: синхронизирую…';
+      if (!on()) b.textContent = 'Синхронизация: включить';
+      else if (s.err) b.textContent = 'Синхронизация: ошибка — нажми';
+      else if (s.last) b.textContent = 'Синхронизировано ' + pad(new Date(s.last).getHours()) + ':' + pad(new Date(s.last).getMinutes()) + ' · ссылка';
+      else b.textContent = 'Синхронизирую…';
     }
-    function schedule() { if (!on()) return; clearTimeout(timer); timer = setTimeout(run, 1500); }
+    function link() { return location.origin + location.pathname + '#sync=' + S.sync.id + '.' + S.sync.k; }
+    function showLink() {
+      $('link-out').value = link();
+      $('link-sheet').hidden = false; $('sheet-bg').hidden = false;
+    }
     function press() {
-      if (!S.sync || !S.sync.on || S.sync.needLogin || !getToken()) {
-        S.sync = S.sync || {}; if (!S.sync.on) S.sync.firstLink = true;
-        auth(false); return;
+      if (!on()) {
+        var raw = new Uint8Array(32); crypto.getRandomValues(raw);
+        var idb = new Uint8Array(18); crypto.getRandomValues(idb);
+        S.sync = { id: 'dela-' + b64(idb), k: b64(raw) }; cryptoKey = null; store();
+        run().then(function () {
+          if (S.sync.err) toast('Синхронизация не включилась', S.sync.err, true);
+          else showLink();
+        });
+        return;
       }
-      run(); toast('Синхронизирую', 'Дела и заметки — с Google Drive');
+      if (S.sync.err) { run().then(function () { if (S.sync.err) toast('Синхронизация: ошибка', S.sync.err, true); else toast('Синхронизировано', ''); }); return; }
+      run(); showLink();
     }
-    return { readRedirect: readRedirect, run: run, schedule: schedule, render: render, press: press };
+    function readLink() {
+      var m = location.hash.match(/^#sync=(dela-[A-Za-z0-9_-]+)\.([A-Za-z0-9_-]{40,})$/);
+      if (!m) return;
+      history.replaceState(null, '', location.origin + location.pathname);
+      if (S.sync && S.sync.id === m[1]) { toast('Это устройство уже подключено', ''); return; }
+      S.sync = { id: m[1], k: m[2], joining: true }; cryptoKey = null; store();
+      toast('Подключаю синхронизацию…', '', true);
+      run().then(function () {
+        if (S.sync.err) toast('Не удалось подключиться', S.sync.err, true);
+        else toast('Синхронизация включена ✓', 'Дела и заметки теперь общие с другим устройством');
+      });
+    }
+    function off() { S.sync = null; cryptoKey = null; store(); render(); toast('Синхронизация выключена на этом устройстве', ''); }
+    function schedule() { if (!on()) return; clearTimeout(timer); timer = setTimeout(run, 1500); }
+    return { run: run, schedule: schedule, render: render, press: press, readLink: readLink, off: off, link: link };
   })();
   window.DelaSync = SYNC;
-  SYNC.readRedirect();
-  if (S.sync && S.sync.justLinked) { delete S.sync.justLinked; store(); setTimeout(function () { toast('Google подключён', 'Дела синхронизируются автоматически'); }, 400); }
+  SYNC.readLink();
   SYNC.render();
   SYNC.run();
-  setInterval(function () { if (!document.hidden) SYNC.run(); }, 60e3);
+  setInterval(function () { if (!document.hidden) SYNC.run(); }, 30e3);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) SYNC.run(); });
   window.addEventListener('online', function () { SYNC.run(); });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) morningBrief(); });

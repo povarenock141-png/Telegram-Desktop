@@ -148,7 +148,7 @@
     <div class="foot">
       <button type="button" class="link-btn" id="alarm-btn" data-act="alarm">Будильник плана в 08:00</button>
       <button type="button" class="link-btn" id="ai-setup" data-act="ai-setup">Подключить AI</button>
-      <button type="button" class="link-btn" id="sync-btn" data-act="sync" hidden>Синхронизация с Google</button>
+      <button type="button" class="link-btn" id="sync-btn" data-act="sync">Синхронизация: включить</button>
       <button type="button" class="link-btn" id="demo-row" data-act="clear-demo" hidden>Убрать примеры</button>
       <span id="app-ver" class="ver"></span>
     </div>
@@ -203,6 +203,18 @@
       </div>
     </div>
   </form>
+
+  <!-- Ссылка синхронизации -->
+  <div id="link-sheet" class="sheet hand-a" hidden>
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <div class="fld"><span>Открой эту ссылку на другом устройстве (компьютер, второй телефон) — дела станут общими. Никому её не отправляй: это ключ к твоим делам.</span></div>
+    <label class="fld"><span class="sr">Ссылка подключения</span><input id="link-out" type="text" readonly></label>
+    <div class="sheet-actions">
+      <button type="button" class="big-btn hand-a" data-act="copy-link">Копировать ссылку</button>
+      <button type="button" class="big-btn hand-b" data-act="share-link">Отправить себе</button>
+      <div class="sheet-sub"><button type="button" class="link-btn" data-act="close-link">Закрыть</button><button type="button" class="link-btn danger" data-act="sync-off">Выключить на этом устройстве</button></div>
+    </div>
+  </div>
 
   <!-- Короткий ввод (место, стикер) -->
   <form id="mini" class="sheet hand-a" hidden autocomplete="off">
