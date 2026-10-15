@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Дела</title>
+<meta name="theme-color" content="#F6F3EA">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Дела">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&family=Pangolin&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <div id="toast" class="toast" role="status" hidden>
+    <svg width="20" height="20" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M6.2 16.8c.9-1.2 1.2-2.4 1.1-4.6-.1-3 1.9-5.4 4.7-5.5 2.9-.1 4.9 2.2 4.8 5.2 0 2.3.3 3.6 1.1 4.8z"/><path d="M10.3 19.6c.9 1 2.6 1 3.5 0M12.1 4.2v2.4"/></svg>
+    <div class="toast-text"><div id="toast-title" class="toast-title"></div><div id="toast-sub" class="toast-sub"></div></div>
+    <button type="button" class="icon-btn" data-act="close-toast" aria-label="Закрыть уведомление"><svg width="18" height="18" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M6 6.2c4 3.7 8 7.6 12 11.6M18 6c-3.9 4.1-7.9 8-12 12"/></svg></button>
+  </div>
+
+  <!-- ДЕЛА -->
+  <main id="view-main">
+    <section id="orb" class="orb-wrap mode-idle" role="img" aria-label="AI">
+      <svg class="wind" viewBox="0 0 390 260" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <g class="wind-g">
+          <path class="w-base" d="M0 64 C 60 54, 110 86, 142 112"/>
+          <path class="w-base" d="M0 196 C 50 186, 100 204, 138 162"/>
+          <path class="w-base" d="M390 56 C 330 66, 288 92, 252 112"/>
+          <path class="w-base" d="M390 206 C 340 196, 300 184, 256 156"/>
+          <path class="w-base" d="M6 132 C 56 126, 92 138, 124 130"/>
+          <path class="w-base" d="M384 132 C 340 138, 300 126, 266 132"/>
+          <path class="w-flow f1" d="M0 64 C 60 54, 110 86, 142 112" stroke-dasharray="54 176"/>
+          <path class="w-flow f2" d="M0 196 C 50 186, 100 204, 138 162" stroke-dasharray="44 186" style="animation-delay:-0.7s"/>
+          <path class="w-flow f2" d="M390 56 C 330 66, 288 92, 252 112" stroke-dasharray="50 180" style="animation-delay:-1.3s"/>
+          <path class="w-flow f1" d="M390 206 C 340 196, 300 184, 256 156" stroke-dasharray="58 172" style="animation-delay:-0.4s"/>
+          <path class="w-flow f3" d="M6 132 C 56 126, 92 138, 124 130" stroke-dasharray="36 194" style="animation-delay:-1s"/>
+          <path class="w-flow f3" d="M384 132 C 340 138, 300 126, 266 132" stroke-dasharray="36 194" style="animation-delay:-0.2s"/>
+        </g>
+      </svg>
+      <div class="orb">
+        <svg class="orb-dots" viewBox="0 0 240 240" aria-hidden="true">
+          <g fill="#1C1A3A"><circle cx="20" cy="96" r="1.8"/><circle cx="38" cy="50" r="1.4"/><circle cx="12" cy="140" r="1.5"/><circle cx="214" cy="64" r="1.7"/><circle cx="228" cy="118" r="1.3"/><circle cx="204" cy="196" r="1.8"/><circle cx="52" cy="210" r="1.4"/><circle cx="124" cy="232" r="1.6"/><circle cx="168" cy="14" r="1.5"/><circle cx="88" cy="10" r="1.2"/><circle cx="230" cy="166" r="1.1"/><circle cx="26" cy="182" r="1.2"/></g>
+        </svg>
+        <svg class="orb-fill" viewBox="0 0 240 240" aria-hidden="true">
+          <defs><clipPath id="orbClip"><circle cx="120" cy="120" r="66"/></clipPath></defs>
+          <circle cx="120" cy="120" r="66" fill="#FFFDF6"/>
+          <g clip-path="url(#orbClip)">
+            <g id="level" transform="translate(0 180)">
+              <path id="fillwave" fill="#8A8A3A" opacity="0.28" d="M0 0"/>
+            </g>
+          </g>
+        </svg>
+        <div class="orb-rings">
+          <svg viewBox="0 0 240 240" aria-hidden="true">
+            <defs>
+              <filter id="aiWind" x="-25%" y="-25%" width="150%" height="150%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="2" seed="4" result="noise">
+                  <animate id="anim-freq" attributeName="baseFrequency" values="0.016;0.03;0.02;0.016" dur="7s" repeatCount="indefinite"/>
+                </feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="noise" scale="8" xChannelSelector="R" yChannelSelector="G">
+                  <animate id="anim-gust" attributeName="scale" values="5;6;16;6;5;13;5" keyTimes="0;0.3;0.38;0.5;0.72;0.78;1" dur="7s" repeatCount="indefinite"/>
+                </feDisplacementMap>
+              </filter>
+            </defs>
+            <g filter="url(#aiWind)" fill="none" stroke="#1C1A3A" stroke-linecap="round">
+              <circle cx="120" cy="120" r="68" stroke-width="2.4"/>
+              <circle cx="120" cy="120" r="82" stroke-width="1.4" opacity="0.55"/>
+              <circle cx="120" cy="120" r="96" stroke-width="1" opacity="0.32"/>
+            </g>
+          </svg>
+        </div>
+        <div class="orb-star" aria-hidden="true">
+          <svg width="56" height="56" viewBox="0 0 40 40"><path d="M20.3 3.5 C21 11, 22 16.5, 29 19.2 C 22.5 21, 21.2 25.5, 20 36.2 C 18.8 26, 17.6 21.6, 10.8 20.4 C 17.8 18.8, 19.2 12, 20.3 3.5 Z" fill="none" stroke="#1C1A3A" stroke-width="1.6" stroke-linejoin="round"/></svg>
+        </div>
+      </div>
+    </section>
+
+    <div id="date" class="date"></div>
+
+    <div class="boxes">
+      <div class="box hand-a" title="Погода в Баку">
+        <svg width="20" height="20" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M12.2 8.1c2.2-.2 4 1.6 3.9 3.9-.1 2.2-1.9 3.9-4.1 3.8-2.1-.1-3.8-1.9-3.7-4 .1-2 1.8-3.6 3.9-3.7z"/><path d="M12 2.5v2.4M12.2 19.3v2.2M2.6 12.1h2.3M19.2 11.9h2.2M5.3 5.2l1.6 1.7M17.2 17.1l1.5 1.6M5.4 18.8l1.7-1.5M17.1 6.9l1.6-1.6"/></svg>
+        <span id="box-weather">—°</span>
+      </div>
+      <button type="button" class="box hand-b" data-act="edit-place" title="Где я">
+        <svg width="20" height="20" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M12.1 21.6c-2.6-2.6-6.9-7.2-7-11.5C5 6.3 8.2 3 12 3s7 3.1 6.9 7c-.1 4.4-4.2 8.9-6.8 11.6z"/><path d="M12 7.6c1.4 0 2.5 1.1 2.4 2.5 0 1.3-1.2 2.4-2.5 2.3-1.3 0-2.3-1.1-2.3-2.4.1-1.3 1.1-2.3 2.4-2.4z"/></svg>
+        <span id="box-place">Novikov</span>
+      </button>
+      <div class="box hand-a" id="box-next-wrap" title="Следующее дело">
+        <svg width="20" height="20" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M12.3 3.1c5 .1 8.8 4 8.6 8.9-.2 4.9-4.1 8.8-9 8.7-4.9-.1-8.7-4.1-8.6-9 .2-4.9 4.1-8.7 9-8.6z"/><path d="M12 7.2l.2 5.1 3.4 1.9"/></svg>
+        <span id="box-next">—</span>
+      </div>
+    </div>
+
+    <div class="ai-say" aria-live="polite">
+      <div id="ai-heard" class="ai-heard" hidden></div>
+      <div id="ai-text" class="ai-text"></div>
+    </div>
+
+    <form id="ask-form" class="ask hand-a" autocomplete="off">
+      <label for="ask" class="sr">Сообщение для AI</label>
+      <input id="ask" type="text" enterkeyhint="send" placeholder="Напиши AI · голос — зажми низ экрана">
+    </form>
+
+    <div class="sees">
+      <div class="label-sm">AI видит</div>
+      <div class="sees-row">
+        <button type="button" class="see hand-a" data-act="soon" data-name="Почта"><svg width="20" height="20" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M3.4 6.2l17.2-.1.1 12-17.3.1z"/><path d="M3.6 6.4c2.8 2.3 5.6 4.4 8.5 6.4 2.9-2 5.7-4.2 8.4-6.5"/></svg><span>Почта</span></button>
+        <button type="button" class="see hand-b" data-act="soon" data-name="WhatsApp"><svg width="20" height="20" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M12.1 3.3c4.8 0 8.6 3.8 8.5 8.6-.1 4.7-3.9 8.4-8.6 8.4-1.4 0-2.8-.4-4-1l-4.6 1.2 1.3-4.3c-.7-1.3-1.1-2.8-1.1-4.4.1-4.7 3.9-8.5 8.5-8.5z"/><path d="M9.2 8.6c.2 2.9 2.6 5.6 5.8 6.4"/></svg><span>WhatsApp</span></button>
+        <button type="button" class="see hand-a" data-act="soon" data-name="Instagram"><svg width="20" height="20" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M7.2 3.4l9.6-.1c2.1 0 3.8 1.7 3.8 3.8l.1 9.7c0 2.1-1.7 3.8-3.8 3.8l-9.7.1c-2.1 0-3.8-1.7-3.8-3.8L3.3 7.2c.1-2.1 1.8-3.8 3.9-3.8z"/><path d="M12.1 8.3c2.1 0 3.7 1.7 3.6 3.8 0 2-1.7 3.6-3.8 3.6-2 0-3.6-1.7-3.6-3.7.1-2 1.7-3.7 3.8-3.7z"/><path d="M17 6.8h.1"/></svg><span>Instagram</span></button>
+        <button type="button" class="see hand-b" data-act="soon" data-name="Компьютер"><svg width="20" height="20" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M3.6 4.4l16.9-.1v11.4l-16.9.1z"/><path d="M8.2 20.2c2.6-.2 5.1.1 7.7-.1M12 15.9v4.2"/></svg><span>Компьютер</span></button>
+      </div>
+    </div>
+
+    <div class="row-end"><a href="#notes" class="link">Все заметки →</a></div>
+
+    <button type="button" class="big-btn hand-a" data-act="plan">
+      <svg width="20" height="20" viewBox="0 0 40 40" aria-hidden="true"><path d="M20.3 3.5 C21 11, 22 16.5, 29 19.2 C 22.5 21, 21.2 25.5, 20 36.2 C 18.8 26, 17.6 21.6, 10.8 20.4 C 17.8 18.8, 19.2 12, 20.3 3.5 Z" fill="none" stroke="#1C1A3A" stroke-width="2.6" stroke-linejoin="round"/></svg>
+      <span id="plan-label">Вычислить план</span>
+    </button>
+
+    <div id="plan"></div>
+
+    <div id="main-task" class="main-task"></div>
+
+    <div id="stickers" class="stickers"></div>
+
+    <div id="filters" class="filters" role="tablist" aria-label="Фильтр"></div>
+
+    <div id="list" class="list"></div>
+
+    <button type="button" class="add-row" data-act="new-task">
+      <span class="circle dashed"><svg width="20" height="20" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M12.2 4.8c-.3 4.9.2 9.6-.1 14.4M4.9 12.1c4.7.2 9.6-.3 14.3.1"/></svg></span>
+      Новое дело
+    </button>
+
+    <div id="demo-row" class="demo-row" hidden><button type="button" class="link-btn" data-act="clear-demo">Убрать примеры</button></div>
+  </main>
+
+  <!-- ЗАМЕТКИ -->
+  <main id="view-notes" hidden>
+    <div class="notes-head">
+      <div>
+        <div id="notes-count" class="label-sm"></div>
+        <h1 class="h1">Заметки</h1>
+      </div>
+      <a href="#" class="pill hand-a" data-act="go-main">
+        <svg width="16" height="16" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M15 5.2c-2.4 2.2-4.6 4.4-6.8 6.9 2.2 2.3 4.4 4.5 6.8 6.7"/></svg>
+        Дела
+      </a>
+    </div>
+    <form id="note-form" class="ask hand-b" autocomplete="off">
+      <label for="note-input" class="sr">Новая заметка</label>
+      <input id="note-input" type="text" enterkeyhint="done" placeholder="Новая заметка · голос — зажми низ экрана">
+    </form>
+    <div id="notes-list" class="notes-list"></div>
+  </main>
+
+  <!-- Редактор дела -->
+  <div id="sheet-bg" class="sheet-bg" hidden data-act="close-sheet"></div>
+  <form id="sheet" class="sheet hand-b" hidden autocomplete="off">
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <label class="fld"><span>Что сделать</span><input id="f-title" type="text" required></label>
+    <div class="fld"><span>Тип</span>
+      <div class="seg" id="f-kind">
+        <button type="button" data-val="task">Задача</button><button type="button" data-val="deal">Дело</button><button type="button" data-val="duty">Обязанность</button>
+      </div>
+    </div>
+    <div class="fld"><span>Когда</span>
+      <div class="seg" id="f-when">
+        <button type="button" data-val="today">Сегодня</button><button type="button" data-val="tomorrow">Завтра</button><button type="button" data-val="date">Дата</button>
+      </div>
+      <input id="f-date" type="date" hidden>
+      <label class="check"><input id="f-daily" type="checkbox"> Каждый день</label>
+    </div>
+    <div class="fld-row">
+      <label class="fld"><span>В (время)</span><input id="f-time" type="time"></label>
+      <label class="fld"><span>До (срок)</span><input id="f-due" type="time"></label>
+    </div>
+    <label class="check"><input id="f-remind" type="checkbox" checked> Напомнить за 15 минут</label>
+    <div class="sheet-actions">
+      <button type="submit" class="big-btn hand-a">Сохранить</button>
+      <div class="sheet-sub">
+        <button type="button" class="link-btn" id="f-cal" data-act="to-calendar">В календарь iPhone</button>
+        <button type="button" class="link-btn danger" id="f-del" data-act="delete-task">Удалить</button>
+      </div>
+    </div>
+  </form>
+
+  <!-- Короткий ввод (место, стикер) -->
+  <form id="mini" class="sheet hand-a" hidden autocomplete="off">
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <label class="fld"><span id="mini-label">Текст</span><input id="mini-input" type="text"></label>
+    <div class="sheet-actions">
+      <button type="submit" class="big-btn hand-a">Готово</button>
+      <div class="sheet-sub"><button type="button" class="link-btn" data-act="close-mini">Отмена</button></div>
+    </div>
+  </form>
+
+  <div id="glow" class="glow" hidden aria-hidden="true"></div>
+  <button type="button" id="voice-zone" class="voice-zone" aria-label="Удерживай, чтобы сказать AI"></button>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
