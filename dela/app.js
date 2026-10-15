@@ -241,16 +241,45 @@
     'Одна фраза может дать несколько действий. Вопрос — это не задача и не заметка: просто ответь. Не создавай дубли уже существующих дел.',
     'Если на экране «Заметки» и фраза похожа на мысль — это заметка. Если в фразе есть поручение со сроком — это дело.'
   ].join('\n');
-  function aiCommand(text, source) {
-    setMode('think');
-    fetch('https://api.anthropic.com/v1/messages', {
+  /* бесплатный AI — Google Gemini (ключ начинается с AIza), платный — Claude (sk-ant-…) */
+  var GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash-lite'];
+  function askGemini(prompt, i) {
+    i = i || 0;
+    return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODELS[i] + ':generateContent', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': S.aiKey },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: AI_SYSTEM }] },
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 800, temperature: 0.3 }
+      })
+    }).then(function (r) {
+      return r.json().then(function (j) {
+        if (!r.ok) {
+          if ((r.status === 429 || r.status === 404 || r.status === 503) && i + 1 < GEMINI_MODELS.length) return askGemini(prompt, i + 1);
+          throw new Error((j.error && j.error.message) || ('HTTP ' + r.status));
+        }
+        var c = j.candidates && j.candidates[0];
+        return ((c && c.content && c.content.parts) || []).map(function (p) { return p.text || ''; }).join('');
+      });
+    });
+  }
+  function askClaude(prompt) {
+    return fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': S.aiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: AI_MODEL, max_tokens: 700, system: AI_SYSTEM, messages: [{ role: 'user', content: aiContext() + '\n\nМакс говорит: ' + text }] })
+      body: JSON.stringify({ model: AI_MODEL, max_tokens: 700, system: AI_SYSTEM, messages: [{ role: 'user', content: prompt }] })
     }).then(function (r) {
-      return r.json().then(function (j) { if (!r.ok) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status)); return j; });
-    }).then(function (j) {
-      var raw = (j.content || []).map(function (c) { return c.text || ''; }).join('');
+      return r.json().then(function (j) {
+        if (!r.ok) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status));
+        return (j.content || []).map(function (c) { return c.text || ''; }).join('');
+      });
+    });
+  }
+  function aiCommand(text, source) {
+    setMode('think');
+    var prompt = aiContext() + '\n\nМакс говорит: ' + text;
+    (/^AIza/.test(S.aiKey) ? askGemini(prompt) : askClaude(prompt)).then(function (raw) {
       var m = raw.match(/\{[\s\S]*\}/);
       var out = m ? JSON.parse(m[0]) : { reply: raw, actions: [] };
       applyActions(out.actions || [], source);
@@ -259,7 +288,8 @@
     }).catch(function (err) {
       setMode('idle');
       var msg = String(err && err.message || err);
-      if (/auth|api.key|401|invalid x-api-key/i.test(msg)) toast('AI: ключ не подходит', 'Проверь ключ — «Изменить ключ AI» внизу');
+      if (/auth|api.key|API key|401|403|invalid x-api-key|PERMISSION/i.test(msg)) toast('AI: ключ не подходит', 'Проверь ключ — «изменить ключ» внизу экрана');
+      else if (/quota|RESOURCE_EXHAUSTED|429|rate/i.test(msg)) toast('AI: лимит на сегодня исчерпан', 'Бесплатный лимит обновится завтра');
       else if (/credit|balance|billing/i.test(msg)) toast('AI: закончился баланс', 'Пополни счёт на console.anthropic.com');
       else toast('AI недоступен', 'Сделал без AI. ' + msg.slice(0, 60));
       showReply(localCommand(text, source), source === 'voice' ? text : '');
@@ -617,7 +647,7 @@
         if (armed(el)) { S.tasks = S.tasks.filter(function (x) { return x.daily || !x.done; }); save(); UI.archiveOpen = false; renderMain(); }
         break;
       case 'ai-setup':
-        ask(S.aiKey ? 'Ключ Claude API (пусто — отключить AI)' : 'Вставь ключ Claude API (sk-ant-…)', S.aiKey || '', function (v) {
+        ask(S.aiKey ? 'Ключ AI (пусто — отключить)' : 'Вставь ключ AI — Gemini (AIza…) или Claude (sk-ant-…)', S.aiKey || '', function (v) {
           v = v.trim();
           S.aiKey = v; save(); renderMain();
           toast(v ? 'AI подключён' : 'AI отключён', v ? 'Спроси что-нибудь в строке «Напиши AI»' : 'Работаю без AI');
