@@ -3,7 +3,7 @@
 
   /* ---------- утилиты ---------- */
   var KEY = 'dela.v1';
-  var APP_VERSION = '10';
+  var APP_VERSION = '11';
   var KINDS = { task: 'задача', deal: 'дело', duty: 'обязанность' };
   var KINDS_ACC = { task: 'задачу', deal: 'дело', duty: 'обязанность' };
   var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -232,6 +232,7 @@
     if (UI.mode === 'think') return;
     if (S.aiKey) { aiCommand(text, source); return; }
     var reply = localCommand(text, source);
+    if (!UI.aiHintShown) { UI.aiHintShown = true; reply += ' AI не подключён — поэтому я только записываю. Подключи ключ Google внизу экрана, и AI будет понимать любые поручения.'; }
     think(function () { showReply(reply, source === 'voice' ? text : ''); });
   }
 
