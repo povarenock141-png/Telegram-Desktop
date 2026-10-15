@@ -368,7 +368,7 @@
   function aiCommand(text, source) {
     setMode('think');
     var prompt = aiContext() + '\n\nМакс говорит: ' + text;
-    (/^AIza/.test(S.aiKey) ? askGemini(prompt) : askClaude(prompt)).then(function (raw) {
+    (/^sk-ant/.test(S.aiKey) ? askClaude(prompt) : askGemini(prompt)).then(function (raw) {
       var m = raw.match(/\{[\s\S]*\}/);
       var out = m ? JSON.parse(m[0]) : { reply: raw, actions: [] };
       applyActions(out.actions || [], source);
@@ -777,13 +777,17 @@
           v = v.replace(/\s+/g, '').replace(/^["'«]+|["'»]+$/g, '');
           S.aiKey = v; S.geminiModels = null; save(); renderMain();
           if (!v) { toast('AI отключён', 'Работаю без AI'); return; }
-          if (/^AIza/.test(v)) {
+          if (!/^sk-ant/.test(v)) {
             toast('Проверяю ключ…', '', true);
             geminiPick(v).then(function (ls) {
               S.geminiModels = ls; save();
-              toast('AI подключён ✓', 'Модель ' + ls[0] + '. Спроси что-нибудь в строке «Напиши AI»');
-            }).catch(function (e) { var m = String(e.message || e); toast(aiErrorTitle(m), m.slice(0, 110), true); });
-          } else toast('AI подключён', 'Спроси что-нибудь в строке «Напиши AI»');
+              toast('AI подключён ✓', 'Google Gemini, модель ' + ls[0] + '. Спроси что-нибудь в строке «Напиши AI»');
+            }).catch(function (e) {
+              var m = String(e.message || e);
+              var hint = /^AIza/.test(v) ? m.slice(0, 110) : 'Вставлено «' + v.slice(0, 6) + '…» (' + v.length + ' символов). Ключ Google начинается с AIza и длиной около 39 символов';
+              toast(aiErrorTitle(m), hint, true);
+            });
+          } else toast('AI подключён', 'Claude. Спроси что-нибудь в строке «Напиши AI»');
         });
         break;
       case 'bell':
@@ -874,7 +878,7 @@
   route();
   weather();
   setTimeout(startupToast, 1200);
-  if (/^AIza/.test(S.aiKey || '') && !S.geminiModels) geminiPick(S.aiKey).then(function (ls) { S.geminiModels = ls; save(); }).catch(function () { /* проверим при первом запросе */ });
+  if (S.aiKey && !/^sk-ant/.test(S.aiKey) && !S.geminiModels) geminiPick(S.aiKey).then(function (ls) { S.geminiModels = ls; save(); }).catch(function () { /* проверим при первом запросе */ });
   setTimeout(morningBrief, 600);
 
   /* ---------- синхронизация через Google Drive (скрытая папка приложения) ---------- */
