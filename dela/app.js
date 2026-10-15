@@ -446,7 +446,9 @@
       try { a.beginElement(); } catch (e) { /* SMIL недоступен */ }
     });
     $('glow').hidden = m !== 'listen';
-    if (m !== 'idle') { $('ai-text').textContent = m === 'listen' ? 'Слушаю… отпусти, когда закончишь' : 'Думаю…'; $('ai-heard').hidden = true; }
+    $('mic-fab').classList.toggle('on', m === 'listen');
+    $('mic-fab').setAttribute('aria-pressed', String(m === 'listen'));
+    if (m !== 'idle') { $('ai-text').textContent = m === 'listen' ? 'Слушаю… нажми микрофон, когда закончишь' : 'Думаю…'; $('ai-heard').hidden = true; }
   }
   function think(done) { setMode('think'); setTimeout(function () { setMode('idle'); done(); }, 700); }
 
@@ -549,7 +551,7 @@
         '<button type="button" class="chip" data-act="pin" data-id="' + n.id + '">' + (n.pinned ? 'Снять стикер' : 'На стикер') + '</button>' +
         '<button type="button" class="link-btn danger" data-act="del-note" data-id="' + n.id + '">Удалить</button>' +
         '</div></div>';
-    }).join('') : '<div class="empty">Заметок пока нет — напиши или зажми низ экрана</div>';
+    }).join('') : '<div class="empty">Заметок пока нет — напиши или нажми микрофон</div>';
   }
   function flashNote(id) {
     var el = $('note-' + id); if (!el) return;
@@ -742,7 +744,7 @@
     var text = heard.trim(); rec = null;
     setMode('idle');
     if (text) command(text, 'voice');
-    else { if (current() === 'main') renderMain(); toast('Не расслышал', 'Зажми низ экрана и говори, пока держишь'); }
+    else { if (current() === 'main') renderMain(); toast('Не расслышал', 'Нажми микрофон, скажи и нажми ещё раз'); }
   }
 
   /* ---------- события ---------- */
@@ -852,10 +854,10 @@
     $('note-input').value = ''; $('note-input').blur();
     var n = addNote(v, false, false); renderNotes(); flashNote(n.id);
   });
-  var vz = $('voice-zone');
-  vz.addEventListener('pointerdown', voiceStart);
-  ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) { vz.addEventListener(ev, voiceStop); });
-  vz.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  $('mic-fab').addEventListener('click', function (e) {
+    e.preventDefault();
+    if (active) voiceStop(); else voiceStart();
+  });
   window.addEventListener('hashchange', route);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { checkReminders(); } });
 
