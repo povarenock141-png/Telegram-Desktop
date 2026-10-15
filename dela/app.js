@@ -3,7 +3,7 @@
 
   /* ---------- утилиты ---------- */
   var KEY = 'dela.v1';
-  var APP_VERSION = '13';
+  var APP_VERSION = '14';
   var KINDS = { task: 'задача', deal: 'дело', duty: 'обязанность' };
   var KINDS_ACC = { task: 'задачу', deal: 'дело', duty: 'обязанность' };
   var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -79,13 +79,17 @@
     S.tasks.concat(S.notes).forEach(function (x) {
       seen[x.id] = 1;
       var j = bare(x);
-      if (snap[x.id] !== j) { x.u = now; snap[x.id] = j; }
+      if (snap[x.id] !== j) { x.u = now; snap[x.id] = j; if (S.del[x.id]) delete S.del[x.id]; }
     });
     Object.keys(snap).forEach(function (id) {
       if (id !== '__meta' && !seen[id]) { S.del[id] = now; delete snap[id]; }
     });
     var m = metaStr();
     if (snap.__meta !== m) { S.metaU = now; snap.__meta = m; }
+  }
+  /* чужие данные проверяем на входе: только объекты с id и текстом */
+  function validList(a, field) {
+    return (Array.isArray(a) ? a : []).filter(function (x) { return x && typeof x === 'object' && typeof x.id === 'string' && x.id.length < 40 && typeof x[field] === 'string'; });
   }
   function mergeRemote(R) {
     var del = Object.assign({}, R.del || {});
@@ -111,8 +115,8 @@
       });
       return out;
     }
-    S.tasks = un(R.tasks, S.tasks);
-    S.notes = un(R.notes, S.notes);
+    S.tasks = un(validList(R.tasks, 'title'), S.tasks);
+    S.notes = un(validList(R.notes, 'body'), S.notes);
     S.del = del;
     if ((R.metaU || 0) > (S.metaU || 0)) { S.place = R.place; S.aiKey = R.aiKey; S.metaU = R.metaU; }
     takeSnap(); store();
@@ -227,7 +231,7 @@
     if (current() === 'notes') { renderNotes(); toast('AI', text); } else renderMain();
   }
   function command(text, source) {
-    text = (text || '').trim();
+    text = (text || '').trim().slice(0, 2000);
     if (!text) return;
     if (UI.mode === 'think') return;
     if (S.aiKey) { aiCommand(text, source); return; }
@@ -300,6 +304,7 @@
     '{"type":"delete","id":"…"}, {"type":"update","id":"…", поля как у add_task} — перенести, переименовать, удалить.',
     '{"type":"show_plan"} — показать план дня.',
     'kind: task — задача (своя работа), deal — дело (звонок, заказ, письмо, встреча), duty — обязанность (регулярное, по должности).',
+    'delete — только если Макс прямо сказал удалить. Сомневаешься — переспроси в reply, ничего не меняя.',
     'Одна фраза может дать несколько действий. Вопрос — это не задача и не заметка: просто ответь. Не создавай дубли уже существующих дел.',
     'Если на экране «Заметки» и фраза похожа на мысль — это заметка. Если в фразе есть поручение со сроком — это дело.',
     'У тебя НЕТ доступа к почте, WhatsApp, Instagram, Telegram, календарю и компьютеру Макса — они ещё не подключены. Если просят проверить их, честно скажи, что это подключим на следующем этапе, и предложи добавить напоминание. Никогда не выдумывай содержимое писем и сообщений.'
@@ -372,17 +377,34 @@
     setMode('think');
     var prompt = aiContext() + '\n\nМакс говорит: ' + text;
     (/^sk-ant/.test(S.aiKey) ? askClaude(prompt) : askGemini(prompt)).then(function (raw) {
-      var m = raw.match(/\{[\s\S]*\}/);
-      var out = m ? JSON.parse(m[0]) : { reply: raw, actions: [] };
-      applyActions(out.actions || [], source);
+      var m = raw.match(/\{[\s\S]*\}/), out;
+      try { out = JSON.parse(m ? m[0] : ''); } catch (e) { throw new Error('AI ответил не по формату'); }
+      checkpoint();
+      var c = applyActions(out.actions, source);
+      S.ai = { ok: Date.now(), err: '' }; store();
       setMode('idle');
-      showReply(out.reply || 'Готово.', source === 'voice' ? text : '');
+      showReply(clean(out.reply, 600) || 'Готово.', source === 'voice' ? text : '');
+      var ch = changesText(c);
+      if (ch) toast('AI: ' + ch, 'Не то — нажми «Вернуть»', false, null, true); else undoSnap = null;
     }).catch(function (err) {
       setMode('idle');
       var msg = String(err && err.message || err);
+      S.ai = { ok: (S.ai && S.ai.ok) || 0, err: msg.slice(0, 200), errAt: Date.now() }; store(); renderAiBtn();
+      /* без AI ничего не выдумываем и не записываем: текст возвращается в строку */
+      if (source === 'auto') return;
+      var inp = current() === 'notes' ? $('note-input') : $('ask');
+      inp.value = text;
       toast(aiErrorTitle(msg), msg.slice(0, 110), true);
-      showReply(localCommand(text, source), source === 'voice' ? text : '');
+      showReply(aiErrorTitle(msg).replace(/^AI: /, 'AI не ответил: ') + '. Ничего не записал — текст вернул в строку, отправь ещё раз.', source === 'voice' ? text : '');
     });
+  }
+  function renderAiBtn() {
+    var b = $('ai-setup'); if (!b) return;
+    var a = S.ai || {};
+    if (!S.aiKey) b.textContent = 'Подключить AI';
+    else if (a.err && (a.errAt || 0) > (a.ok || 0)) b.textContent = aiErrorTitle(a.err).replace(/^AI: /, 'AI не работает: ') + ' · ключ';
+    else if (a.ok) b.textContent = 'AI работает · ответил ' + pad(new Date(a.ok).getHours()) + ':' + pad(new Date(a.ok).getMinutes()) + ' · ключ';
+    else b.textContent = 'AI: ключ есть, ещё не проверен · ключ';
   }
   function aiErrorTitle(msg) {
     if (/API key not valid|API_KEY_INVALID|invalid x-api-key|authentication/i.test(msg)) return 'AI: ключ не принят — скопируй заново';
@@ -393,30 +415,61 @@
     if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) return 'AI: нет связи с сервером';
     return 'AI: ошибка';
   }
+  var HHMM = /^([01]\d|2[0-3]):[0-5]\d$/, YMD = /^\d{4}-\d{2}-\d{2}$/;
+  function clean(v, n) { return typeof v === 'string' ? v.trim().slice(0, n) : ''; }
+  /* действия AI проверяются по одному; кривое — пропускается. Возвращает счётчик изменений */
   function applyActions(acts, source) {
-    acts.forEach(function (a) {
+    var c = { add: 0, note: 0, done: 0, del: 0, upd: 0 };
+    (Array.isArray(acts) ? acts : []).slice(0, 12).forEach(function (a) {
       var t;
+      if (!a || typeof a !== 'object') return;
       try {
-        if (a.type === 'add_task' && a.title) {
-          t = { id: uid(), title: cap(a.title), kind: KINDS[a.kind] ? a.kind : 'task', daily: !!a.daily, date: /^\d{4}-\d{2}-\d{2}$/.test(a.date || '') ? a.date : today(), time: a.time || '', due: a.due || '' };
+        if (a.type === 'add_task' && clean(a.title, 120)) {
+          t = { id: uid(), title: cap(clean(a.title, 120)), kind: KINDS[a.kind] ? a.kind : 'task', daily: a.daily === true, date: YMD.test(a.date || '') ? a.date : today(), time: HHMM.test(a.time || '') ? a.time : '', due: HHMM.test(a.due || '') ? a.due : '' };
           t.remind = !!(t.time || t.due); if (source === 'voice') t.voice = true;
-          S.tasks.unshift(t);
-        } else if (a.type === 'add_note' && a.text) {
-          var n = addNote(a.text, !!a.sticker, source === 'voice');
+          S.tasks.unshift(t); c.add++;
+        } else if (a.type === 'add_note' && clean(a.text, 2000)) {
+          var n = addNote(clean(a.text, 2000), a.sticker === true, source === 'voice'); c.note++;
           if (current() === 'notes') setTimeout(function () { flashNote(n.id); }, 50);
         } else if (a.type === 'complete' && (t = find(a.id))) {
-          complete(t, true);
+          complete(t, true); c.done++;
         } else if (a.type === 'delete' && (t = find(a.id))) {
-          S.tasks = S.tasks.filter(function (x) { return x !== t; });
+          S.tasks = S.tasks.filter(function (x) { return x !== t; }); c.del++;
         } else if (a.type === 'update' && (t = find(a.id))) {
-          ['title', 'kind', 'date', 'time', 'due', 'daily'].forEach(function (k) { if (a[k] !== undefined && a[k] !== null) t[k] = a[k]; });
-          t.remind = !!(t.time || t.due); delete t.demo;
+          if (clean(a.title, 120)) t.title = cap(clean(a.title, 120));
+          if (KINDS[a.kind]) t.kind = a.kind;
+          if (YMD.test(a.date || '')) t.date = a.date;
+          if (typeof a.daily === 'boolean') t.daily = a.daily;
+          if (a.time === '' || HHMM.test(a.time || '')) t.time = a.time;
+          if (a.due === '' || HHMM.test(a.due || '')) t.due = a.due;
+          t.remind = !!(t.time || t.due); delete t.demo; c.upd++;
         } else if (a.type === 'show_plan') {
           UI.plan = true;
         }
       } catch (e) { /* пропускаем кривое действие */ }
     });
+    lastDone = null;
     save();
+    return c;
+  }
+  function changesText(c) {
+    var p = [];
+    if (c.add) p.push('+' + c.add + ' в дела');
+    if (c.note) p.push('+' + c.note + ' в заметки');
+    if (c.done) p.push(c.done + ' выполнено');
+    if (c.upd) p.push(c.upd + ' изменено');
+    if (c.del) p.push(c.del + ' удалено');
+    return p.join(', ');
+  }
+
+  /* точка отката: удаление, очистка архива, действия AI — всё можно вернуть одной кнопкой */
+  var undoSnap = null;
+  function checkpoint() { undoSnap = JSON.stringify({ tasks: S.tasks, notes: S.notes }); lastDone = null; }
+  function rollback() {
+    if (!undoSnap) return false;
+    var o = JSON.parse(undoSnap); undoSnap = null;
+    S.tasks = o.tasks; S.notes = o.notes; save();
+    return true;
   }
 
   /* выполнение и архив */
@@ -424,7 +477,7 @@
   function complete(t, quiet) {
     if (t.daily) t.doneOn = today(); else { t.done = true; t.doneAt = Date.now(); }
     if (UI.toastFor === t.id) $('toast').hidden = true;
-    lastDone = t.id;
+    if (!quiet) { lastDone = t.id; undoSnap = null; }
     save();
     if (!quiet) toast('Готово: ' + t.title, t.daily ? 'Вернётся завтра' : 'Убрал в архив', false, null, true);
   }
@@ -534,7 +587,7 @@
       }).join('') + '<button type="button" class="link-btn archive-clear" data-act="archive-clear">Очистить архив</button>' : '') : '';
 
     $('demo-row').hidden = !S.tasks.some(function (t) { return t.demo; }) && !S.notes.some(function (n) { return n.demo; });
-    $('ai-setup').textContent = S.aiKey ? 'AI подключён · изменить ключ' : 'Подключить AI';
+    renderAiBtn();
     $('alarm-btn').textContent = S.alarmSet ? 'План в 08:00 · поставить заново' : 'Будильник плана в 08:00';
   }
 
@@ -766,13 +819,17 @@
         t = find(id); if (t) { uncomplete(t); renderMain(); toast('Вернул: ' + t.title, ''); }
         break;
       case 'undo':
-        t = find(lastDone); if (t) { uncomplete(t); lastDone = null; $('toast').hidden = true; renderMain(); }
+        if (lastDone) { t = find(lastDone); if (t) uncomplete(t); lastDone = null; }
+        else if (rollback()) toast('Вернул как было', '');
+        $('toast').hidden = true; if (current() === 'notes') renderNotes(); else renderMain();
         break;
       case 'archive-toggle': UI.archiveOpen = !UI.archiveOpen; renderMain(); break;
       case 'archive-clear':
-        if (armed(el)) { S.tasks = S.tasks.filter(function (x) { return x.daily || !x.done; }); save(); UI.archiveOpen = false; renderMain(); }
+        if (armed(el)) { checkpoint(); S.tasks = S.tasks.filter(function (x) { return x.daily || !x.done; }); save(); UI.archiveOpen = false; renderMain(); toast('Архив очищен', '', false, null, true); }
         break;
       case 'sync': SYNC.press(); break;
+      case 'backup': backup(); break;
+      case 'restore-file': $('restore-input').click(); break;
       case 'copy-link':
         var lo = $('link-out'); lo.select(); lo.setSelectionRange(0, 99999);
         (navigator.clipboard ? navigator.clipboard.writeText(lo.value) : Promise.reject()).then(function () { toast('Ссылка скопирована', 'Открой её на другом устройстве'); }, function () { try { document.execCommand('copy'); toast('Ссылка скопирована', ''); } catch (e2) { toast('Скопируй ссылку вручную', ''); } });
@@ -790,19 +847,19 @@
       case 'ai-setup':
         ask(S.aiKey ? 'Ключ AI (пусто — отключить)' : 'Вставь ключ Google AI Studio целиком', S.aiKey || '', function (v) {
           v = v.replace(/\s+/g, '').replace(/^["'«]+|["'»]+$/g, '');
-          S.aiKey = v; S.geminiModels = null; save(); renderMain();
+          S.aiKey = v; S.geminiModels = null; S.ai = null; save(); renderMain();
           if (!v) { toast('AI отключён', 'Работаю без AI'); return; }
           if (!/^sk-ant/.test(v)) {
             toast('Проверяю ключ…', '', true);
             geminiPick(v).then(function (ls) {
-              S.geminiModels = ls; save();
+              S.geminiModels = ls; S.ai = { ok: Date.now(), err: '' }; save(); renderAiBtn();
               toast('AI подключён ✓', 'Google Gemini, модель ' + ls[0] + '. Спроси что-нибудь в строке «Напиши AI»');
             }).catch(function (e) {
               var m = String(e.message || e);
-              var hint = m.slice(0, 120);
-              toast(aiErrorTitle(m), hint, true);
+              S.ai = { ok: 0, err: m.slice(0, 200), errAt: Date.now() }; store(); renderAiBtn();
+              toast(aiErrorTitle(m), m.slice(0, 120), true);
             });
-          } else toast('AI подключён', 'Claude. Спроси что-нибудь в строке «Напиши AI»');
+          } else toast('Ключ Claude сохранён', 'Проверится первым вопросом в строке «Напиши AI»');
         });
         break;
       case 'bell':
@@ -812,7 +869,7 @@
       case 'close-sheet': closeSheet(); closeMini(); $('link-sheet').hidden = true; break;
       case 'close-mini': closeMini(); break;
       case 'delete-task':
-        if (UI.editing && armed(el)) { delete el.dataset.armed; el.textContent = 'Удалить'; S.tasks = S.tasks.filter(function (x) { return x.id !== UI.editing; }); save(); closeSheet(); renderMain(); toast('Дело удалено', ''); }
+        if (UI.editing && armed(el)) { delete el.dataset.armed; el.textContent = 'Удалить'; checkpoint(); S.tasks = S.tasks.filter(function (x) { return x.id !== UI.editing; }); save(); closeSheet(); renderMain(); toast('Дело удалено', '', false, null, true); }
         break;
       case 'to-calendar': t = find(UI.editing); if (t) toCalendar(t); break;
       case 'filter': UI.filter = el.dataset.val; renderMain(); break;
@@ -831,7 +888,7 @@
       case 'go-main': e.preventDefault(); location.hash = ''; break;
       case 'pin': n = findNote(id); n.pinned = !n.pinned; save(); renderNotes(); break;
       case 'del-note':
-        if (armed(el)) { S.notes = S.notes.filter(function (x) { return x.id !== id; }); save(); renderNotes(); }
+        if (armed(el)) { checkpoint(); S.notes = S.notes.filter(function (x) { return x.id !== id; }); save(); renderNotes(); toast('Заметка удалена', '', false, null, true); }
         break;
       case 'to-tasks':
         n = findNote(id);
@@ -872,6 +929,38 @@
   });
   window.addEventListener('hashchange', route);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { checkReminders(); } });
+
+  /* ---------- копия данных: файл без ключей (AI-ключ и ключ синхронизации не попадают) ---------- */
+  function backup() {
+    var data = { app: 'dela', v: 1, at: new Date().toISOString(), tasks: S.tasks, notes: S.notes, place: S.place };
+    var name = 'dela-kopiya-' + today() + '.json';
+    var blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
+    var file = null;
+    try { file = new File([blob], name, { type: 'application/json' }); } catch (e) { /* старый браузер */ }
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: 'Дела — копия' }).then(function () { toast('Копия сохранена', name); }, function () {});
+      return;
+    }
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    toast('Копия скачана', name);
+  }
+  function restoreFrom(text) {
+    var o;
+    try { o = JSON.parse(text); } catch (e) { toast('Файл не читается', 'Нужен файл копии dela-kopiya-….json', true); return; }
+    if (!o || o.app !== 'dela' || !Array.isArray(o.tasks)) { toast('Это не копия «Дел»', 'Выбери файл dela-kopiya-….json', true); return; }
+    checkpoint();
+    S.tasks = validList(o.tasks, 'title'); S.notes = validList(o.notes, 'body');
+    if (typeof o.place === 'string') S.place = o.place;
+    save(); renderMain();
+    toast('Восстановлено: ' + S.tasks.length + ' дел, ' + S.notes.length + ' заметок', 'Не то — нажми «Вернуть»', false, null, true);
+  }
+  $('restore-input').addEventListener('change', function () {
+    var f = this.files && this.files[0]; this.value = '';
+    if (!f) return;
+    if (f.size > 2e6) { toast('Файл слишком большой', 'Копия «Дел» весит меньше 2 МБ', true); return; }
+    f.text().then(restoreFrom);
+  });
 
   /* ---------- погода (Open-Meteo, без ключа) ---------- */
   function weather() {

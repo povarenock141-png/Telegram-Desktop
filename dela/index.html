@@ -108,7 +108,7 @@
 
     <form id="ask-form" class="ask hand-a" autocomplete="off">
       <label for="ask" class="sr">Сообщение для AI</label>
-      <input id="ask" type="text" enterkeyhint="send" placeholder="Напиши AI или нажми микрофон">
+      <input id="ask" type="text" maxlength="2000" enterkeyhint="send" placeholder="Напиши AI или нажми микрофон">
     </form>
 
     <div class="sees">
@@ -149,6 +149,9 @@
       <button type="button" class="link-btn" id="alarm-btn" data-act="alarm">Будильник плана в 08:00</button>
       <button type="button" class="link-btn" id="ai-setup" data-act="ai-setup">Подключить AI</button>
       <button type="button" class="link-btn" id="sync-btn" data-act="sync">Синхронизация: включить</button>
+      <button type="button" class="link-btn" id="backup-btn" data-act="backup">Копия данных · сохранить</button>
+      <button type="button" class="link-btn" id="restore-btn" data-act="restore-file">Восстановить из копии</button>
+      <input type="file" id="restore-input" accept="application/json,.json" hidden>
       <button type="button" class="link-btn" id="demo-row" data-act="clear-demo" hidden>Убрать примеры</button>
       <span id="app-ver" class="ver"></span>
     </div>
@@ -168,7 +171,7 @@
     </div>
     <form id="note-form" class="ask hand-b" autocomplete="off">
       <label for="note-input" class="sr">Новая заметка</label>
-      <input id="note-input" type="text" enterkeyhint="done" placeholder="Новая заметка или микрофон справа внизу">
+      <input id="note-input" type="text" maxlength="2000" enterkeyhint="done" placeholder="Новая заметка или микрофон справа внизу">
     </form>
     <div id="notes-list" class="notes-list"></div>
   </main>
