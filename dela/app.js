@@ -59,7 +59,67 @@
   try { S = JSON.parse(localStorage.getItem(KEY)); } catch (e) { S = null; }
   if (!S || !S.tasks) S = seed();
   S.fired = S.fired || {};
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* хранилище недоступно */ } }
+  S.del = S.del || {};
+  function store() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* хранилище недоступно */ } }
+  function save() { stamp(); store(); if (window.DelaSync) window.DelaSync.schedule(); }
+
+  /* ---------- метки изменений для синхронизации ---------- */
+  var snap = {};
+  function bare(x) { var c = {}; for (var k in x) if (k !== 'u') c[k] = x[k]; return JSON.stringify(c); }
+  function metaStr() { return JSON.stringify({ place: S.place || '', aiKey: S.aiKey || '' }); }
+  function takeSnap() {
+    snap = {};
+    S.tasks.concat(S.notes).forEach(function (x) { snap[x.id] = bare(x); });
+    snap.__meta = metaStr();
+  }
+  function stamp() {
+    var now = Date.now(), seen = {};
+    S.del = S.del || {};
+    S.tasks.concat(S.notes).forEach(function (x) {
+      seen[x.id] = 1;
+      var j = bare(x);
+      if (snap[x.id] !== j) { x.u = now; snap[x.id] = j; }
+    });
+    Object.keys(snap).forEach(function (id) {
+      if (id !== '__meta' && !seen[id]) { S.del[id] = now; delete snap[id]; }
+    });
+    var m = metaStr();
+    if (snap.__meta !== m) { S.metaU = now; snap.__meta = m; }
+  }
+  function mergeRemote(R) {
+    var del = Object.assign({}, R.del || {});
+    Object.keys(S.del || {}).forEach(function (id) { del[id] = Math.max(del[id] || 0, S.del[id]); });
+    var cutoff = Date.now() - 60 * 864e5;
+    Object.keys(del).forEach(function (id) { if (del[id] < cutoff) delete del[id]; });
+    function un(a, b) {
+      var map = {};
+      (b || []).concat(a || []).forEach(function (x) {
+        var cur = map[x.id];
+        if (!cur || (x.u || 0) > (cur.u || 0)) {
+          if (cur) { for (var k in cur) delete cur[k]; Object.assign(cur, x); } else map[x.id] = x;
+        }
+      });
+      var order = (b || []).concat(a || []).map(function (x) { return x.id; });
+      var out = [], used = {};
+      order.forEach(function (id) {
+        var x = map[id];
+        if (!x || used[id]) return;
+        used[id] = 1;
+        if (del[id] && del[id] >= (x.u || 0)) return;
+        out.push(x);
+      });
+      return out;
+    }
+    S.tasks = un(R.tasks, S.tasks);
+    S.notes = un(R.notes, S.notes);
+    S.del = del;
+    if ((R.metaU || 0) > (S.metaU || 0)) { S.place = R.place; S.aiKey = R.aiKey; S.metaU = R.metaU; }
+    takeSnap(); store();
+  }
+  function payload() {
+    return { v: 1, tasks: S.tasks, notes: S.notes, del: S.del || {}, place: S.place, aiKey: S.aiKey || '', metaU: S.metaU || 0, at: Date.now() };
+  }
+  takeSnap();
 
   var UI = { filter: 'today', plan: false, reply: '', heard: '', mode: 'idle', toastFor: null, editing: null, sheetKind: 'task', sheetWhen: 'today' };
 
@@ -660,7 +720,7 @@
         var row = el.closest('.item');
         el.classList.add('done');
         if (row) { row.style.transition = 'opacity .35s'; row.style.opacity = '0'; }
-        setTimeout(function () { complete(t); renderMain(); }, 350);
+        setTimeout(function () { var cur = find(id); if (cur && !isDone(cur)) complete(cur); renderMain(); }, 350);
         break;
       case 'restore':
         t = find(id); if (t) { uncomplete(t); renderMain(); toast('Вернул: ' + t.title, ''); }
@@ -672,6 +732,7 @@
       case 'archive-clear':
         if (armed(el)) { S.tasks = S.tasks.filter(function (x) { return x.daily || !x.done; }); save(); UI.archiveOpen = false; renderMain(); }
         break;
+      case 'sync': SYNC.press(); break;
       case 'alarm':
         if (IN_FRAME) { toast('Будильник плана', 'Работает в приложении с экрана «Домой»'); break; }
         morningAlarm(); toast('Будильник на 08:00', 'Нажми «Добавить» в календаре'); renderMain();
@@ -772,6 +833,134 @@
   weather();
   setTimeout(startupToast, 1200);
   setTimeout(morningBrief, 600);
+
+  /* ---------- синхронизация через Google Drive (скрытая папка приложения) ---------- */
+  var GOOGLE_CLIENT_ID = '';
+  var SYNC = (function () {
+    var TOKEN_KEY = 'dela.gtoken', FILE = 'dela-sync.json';
+    var SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+    var busy = false, again = false, timer = null;
+    function appUrl() { return location.origin + location.pathname; }
+    function getToken() {
+      try { var t = JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null'); if (t && t.exp > Date.now() + 60e3) return t.v; } catch (e) { /* нет */ }
+      return null;
+    }
+    function on() { return !!(S.sync && S.sync.on && GOOGLE_CLIENT_ID); }
+    function auth(silent) {
+      if (!GOOGLE_CLIENT_ID) return;
+      S.sync = S.sync || {}; S.sync.on = true; S.sync.tried = Date.now(); store();
+      var p = new URLSearchParams({ client_id: GOOGLE_CLIENT_ID, redirect_uri: appUrl(), response_type: 'token', scope: SCOPE, include_granted_scopes: 'true', state: 'dela-sync' });
+      if (silent) p.set('prompt', 'none');
+      if (S.sync.email) p.set('login_hint', S.sync.email);
+      location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + p.toString();
+    }
+    function readRedirect() {
+      if (location.hash.indexOf('state=dela-sync') < 0) return;
+      var h = new URLSearchParams(location.hash.slice(1));
+      history.replaceState(null, '', appUrl());
+      if (h.get('access_token')) {
+        try { localStorage.setItem(TOKEN_KEY, JSON.stringify({ v: h.get('access_token'), exp: Date.now() + (+h.get('expires_in') || 3600) * 1000 })); } catch (e) { /* нет места */ }
+        S.sync = S.sync || {}; S.sync.on = true; S.sync.needLogin = false; store();
+        S.sync.justLinked = true;
+      } else if (h.get('error')) {
+        S.sync = S.sync || {}; S.sync.needLogin = true; store();
+      }
+    }
+    function api(method, url, body, type) {
+      var tok = getToken();
+      if (!tok) return Promise.reject(new Error('no-token'));
+      var o = { method: method, headers: { Authorization: 'Bearer ' + tok } };
+      if (body !== undefined) { o.body = body; o.headers['Content-Type'] = type || 'application/json'; }
+      return fetch(url, o).then(function (r) {
+        if (r.status === 401) { try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* нет */ } throw new Error('no-token'); }
+        if (!r.ok) return r.text().then(function (t) { throw new Error('drive ' + r.status + ' ' + t.slice(0, 80)); });
+        return r.status === 204 ? null : r.json();
+      });
+    }
+    function findFile() {
+      if (S.sync.fileId) return Promise.resolve(S.sync.fileId);
+      return api('GET', 'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name)&q=' + encodeURIComponent("name='" + FILE + "'")).then(function (j) {
+        var f = j.files && j.files[0];
+        if (f) { S.sync.fileId = f.id; store(); return f.id; }
+        return null;
+      });
+    }
+    function create() {
+      var b = 'dela' + Date.now();
+      var body = '--' + b + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify({ name: FILE, parents: ['appDataFolder'] }) +
+        '\r\n--' + b + '\r\nContent-Type: application/json\r\n\r\n' + JSON.stringify(payload()) + '\r\n--' + b + '--';
+      return api('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', body, 'multipart/related; boundary=' + b)
+        .then(function (j) { S.sync.fileId = j.id; store(); });
+    }
+    function run() {
+      if (!on() || !navigator.onLine) return Promise.resolve();
+      if (!getToken()) {
+        if (!S.sync.needLogin && Date.now() - (S.sync.tried || 0) > 5 * 60e3) auth(true);
+        render(); return Promise.resolve();
+      }
+      if (busy) { again = true; return Promise.resolve(); }
+      busy = true;
+      return findFile().then(function (id) {
+        if (!id) {
+          if (S.sync.firstLink) dropDemo();
+          return create();
+        }
+        return api('GET', 'https://www.googleapis.com/drive/v3/files/' + id + '?alt=media').then(function (R) {
+          if (S.sync.firstLink && R && ((R.tasks || []).length || (R.notes || []).length)) dropDemo();
+          var before = JSON.stringify([S.tasks, S.notes, S.place, S.aiKey]);
+          var remoteStr = JSON.stringify([R.tasks, R.notes, R.place, R.aiKey]);
+          mergeRemote(R || {});
+          var after = JSON.stringify([S.tasks, S.notes, S.place, S.aiKey]);
+          if (after !== before) rerender();
+          if (after !== remoteStr) return api('PATCH', 'https://www.googleapis.com/upload/drive/v3/files/' + id + '?uploadType=media', JSON.stringify(payload()));
+        }).catch(function (e) {
+          if (/drive 404/.test(e.message)) { S.sync.fileId = null; store(); }
+          throw e;
+        });
+      }).then(function () {
+        S.sync.firstLink = false; S.sync.last = Date.now(); S.sync.err = ''; store();
+      }).catch(function (e) {
+        S.sync.err = e.message === 'no-token' ? '' : e.message; store();
+      }).then(function () {
+        busy = false; render();
+        if (again) { again = false; return run(); }
+      });
+    }
+    function dropDemo() {
+      S.tasks = S.tasks.filter(function (x) { return !x.demo; });
+      S.notes = S.notes.filter(function (x) { return !x.demo; });
+      takeSnap(); store();
+    }
+    function rerender() { if (current() === 'notes') renderNotes(); else renderMain(); }
+    function render() {
+      var b = $('sync-btn'); if (!b) return;
+      if (!GOOGLE_CLIENT_ID) { b.hidden = true; return; }
+      b.hidden = false;
+      var s = S.sync || {};
+      if (!s.on) b.textContent = 'Синхронизация с Google';
+      else if (s.needLogin) b.textContent = 'Google: войти снова';
+      else if (s.err) b.textContent = 'Google: ошибка, нажми ещё раз';
+      else if (s.last) b.textContent = 'Google ✓ ' + pad(new Date(s.last).getHours()) + ':' + pad(new Date(s.last).getMinutes());
+      else b.textContent = 'Google: синхронизирую…';
+    }
+    function schedule() { if (!on()) return; clearTimeout(timer); timer = setTimeout(run, 1500); }
+    function press() {
+      if (!S.sync || !S.sync.on || S.sync.needLogin || !getToken()) {
+        S.sync = S.sync || {}; if (!S.sync.on) S.sync.firstLink = true;
+        auth(false); return;
+      }
+      run(); toast('Синхронизирую', 'Дела и заметки — с Google Drive');
+    }
+    return { readRedirect: readRedirect, run: run, schedule: schedule, render: render, press: press };
+  })();
+  window.DelaSync = SYNC;
+  SYNC.readRedirect();
+  if (S.sync && S.sync.justLinked) { delete S.sync.justLinked; store(); setTimeout(function () { toast('Google подключён', 'Дела синхронизируются автоматически'); }, 400); }
+  SYNC.render();
+  SYNC.run();
+  setInterval(function () { if (!document.hidden) SYNC.run(); }, 60e3);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) SYNC.run(); });
+  window.addEventListener('online', function () { SYNC.run(); });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) morningBrief(); });
   setInterval(checkReminders, 30000);
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
