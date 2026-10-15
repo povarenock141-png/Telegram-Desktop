@@ -303,9 +303,33 @@
   ].join('\n');
   /* бесплатный AI — Google Gemini (ключ начинается с AIza), платный — Claude (sk-ant-…) */
   var GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash-lite'];
+  /* спросить у Google, какие модели доступны этому ключу, и выбрать быструю */
+  function geminiPick(key) {
+    return fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': key } })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status)); return j; }); })
+      .then(function (j) {
+        var ok = (j.models || []).filter(function (m) {
+          return (m.supportedGenerationMethods || []).indexOf('generateContent') >= 0 && /gemini/.test(m.name) && !/embedding|image|tts|audio|live|vision|thinking/i.test(m.name);
+        }).map(function (m) { return m.name.replace(/^models\//, ''); });
+        function score(n) {
+          var s = 0;
+          if (/flash/.test(n)) s += 100;
+          if (/lite/.test(n)) s -= 5;
+          if (/preview|exp/.test(n)) s -= 40;
+          if (/latest/.test(n)) s -= 1;
+          var v = n.match(/gemini-(\d+(?:\.\d+)?)/); if (v) s += parseFloat(v[1]) * 10;
+          return s;
+        }
+        ok.sort(function (a, b) { return score(b) - score(a); });
+        if (!ok.length) throw new Error('Нет доступных моделей для этого ключа');
+        return ok;
+      });
+  }
   function askGemini(prompt, i) {
     i = i || 0;
-    return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODELS[i] + ':generateContent', {
+    var list = (S.geminiModels && S.geminiModels.length) ? S.geminiModels.slice(0, 3) : GEMINI_MODELS;
+    if (i >= list.length) return Promise.reject(new Error('Модели Gemini недоступны'));
+    return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + list[i] + ':generateContent', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-goog-api-key': S.aiKey },
       body: JSON.stringify({
@@ -316,8 +340,13 @@
     }).then(function (r) {
       return r.json().then(function (j) {
         if (!r.ok) {
-          if ((r.status === 429 || r.status === 404 || r.status === 503) && i + 1 < GEMINI_MODELS.length) return askGemini(prompt, i + 1);
-          throw new Error((j.error && j.error.message) || ('HTTP ' + r.status));
+          var emsg = (j.error && j.error.message) || ('HTTP ' + r.status);
+          if (r.status === 404 || /not found|not supported/i.test(emsg)) {
+            if (!S.geminiModels) return geminiPick(S.aiKey).then(function (ls) { S.geminiModels = ls; save(); return askGemini(prompt, 0); });
+            return askGemini(prompt, i + 1);
+          }
+          if ((r.status === 429 || r.status === 503 || r.status === 500) && i + 1 < list.length) return askGemini(prompt, i + 1);
+          throw new Error(emsg);
         }
         var c = j.candidates && j.candidates[0];
         return ((c && c.content && c.content.parts) || []).map(function (p) { return p.text || ''; }).join('');
@@ -348,12 +377,18 @@
     }).catch(function (err) {
       setMode('idle');
       var msg = String(err && err.message || err);
-      if (/auth|api.key|API key|401|403|invalid x-api-key|PERMISSION/i.test(msg)) toast('AI: ключ не подходит', 'Проверь ключ — «изменить ключ» внизу экрана');
-      else if (/quota|RESOURCE_EXHAUSTED|429|rate/i.test(msg)) toast('AI: лимит на сегодня исчерпан', 'Бесплатный лимит обновится завтра');
-      else if (/credit|balance|billing/i.test(msg)) toast('AI: закончился баланс', 'Пополни счёт на console.anthropic.com');
-      else toast('AI недоступен', 'Сделал без AI. ' + msg.slice(0, 60));
+      toast(aiErrorTitle(msg), msg.slice(0, 110), true);
       showReply(localCommand(text, source), source === 'voice' ? text : '');
     });
+  }
+  function aiErrorTitle(msg) {
+    if (/API key not valid|API_KEY_INVALID|invalid x-api-key|authentication/i.test(msg)) return 'AI: ключ не принят — скопируй заново';
+    if (/has not been used|is disabled|SERVICE_DISABLED|enable it/i.test(msg)) return 'AI: Google ещё включает сервис — попробуй через 5 минут';
+    if (/location|region|country/i.test(msg)) return 'AI: Google не работает из этой страны/сети';
+    if (/quota|RESOURCE_EXHAUSTED|429|rate/i.test(msg)) return 'AI: лимит исчерпан — обновится завтра';
+    if (/credit|balance|billing/i.test(msg)) return 'AI: нужен баланс или биллинг';
+    if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) return 'AI: нет связи с сервером';
+    return 'AI: ошибка';
   }
   function applyActions(acts, source) {
     acts.forEach(function (a) {
@@ -739,9 +774,16 @@
         break;
       case 'ai-setup':
         ask(S.aiKey ? 'Ключ AI (пусто — отключить)' : 'Вставь ключ AI — Gemini (AIza…) или Claude (sk-ant-…)', S.aiKey || '', function (v) {
-          v = v.trim();
-          S.aiKey = v; save(); renderMain();
-          toast(v ? 'AI подключён' : 'AI отключён', v ? 'Спроси что-нибудь в строке «Напиши AI»' : 'Работаю без AI');
+          v = v.replace(/\s+/g, '').replace(/^["'«]+|["'»]+$/g, '');
+          S.aiKey = v; S.geminiModels = null; save(); renderMain();
+          if (!v) { toast('AI отключён', 'Работаю без AI'); return; }
+          if (/^AIza/.test(v)) {
+            toast('Проверяю ключ…', '', true);
+            geminiPick(v).then(function (ls) {
+              S.geminiModels = ls; save();
+              toast('AI подключён ✓', 'Модель ' + ls[0] + '. Спроси что-нибудь в строке «Напиши AI»');
+            }).catch(function (e) { var m = String(e.message || e); toast(aiErrorTitle(m), m.slice(0, 110), true); });
+          } else toast('AI подключён', 'Спроси что-нибудь в строке «Напиши AI»');
         });
         break;
       case 'bell':
@@ -832,6 +874,7 @@
   route();
   weather();
   setTimeout(startupToast, 1200);
+  if (/^AIza/.test(S.aiKey || '') && !S.geminiModels) geminiPick(S.aiKey).then(function (ls) { S.geminiModels = ls; save(); }).catch(function () { /* проверим при первом запросе */ });
   setTimeout(morningBrief, 600);
 
   /* ---------- синхронизация через Google Drive (скрытая папка приложения) ---------- */
