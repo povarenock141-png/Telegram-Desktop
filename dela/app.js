@@ -7,7 +7,7 @@
   /* постоянный адрес приложения: ссылки синхронизации всегда ведут сюда */
   var CANON = 'https://povarenock141-png.github.io/Telegram-Desktop/dela/';
   var OLD_HOST = location.hostname === 'raw.githack.com';
-  var APP_VERSION = '20';
+  var APP_VERSION = '21';
   var KINDS = { task: 'задача', deal: 'дело', duty: 'обязанность' };
   var KINDS_ACC = { task: 'задачу', deal: 'дело', duty: 'обязанность' };
   var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -459,7 +459,8 @@
     'delete — только если Макс прямо сказал удалить. Сомневаешься — переспроси в reply, ничего не меняя.',
     'Одна фраза может дать несколько действий. Вопрос — это не задача и не заметка: просто ответь. Не создавай дубли уже существующих дел.',
     'Если на экране «Заметки» и фраза похожа на мысль — это заметка. Если в фразе есть поручение со сроком — это дело.',
-    'У тебя НЕТ доступа к почте, WhatsApp, Instagram, Telegram, календарю и компьютеру Макса — они ещё не подключены. Если просят проверить их, честно скажи, что это подключим на следующем этапе, и предложи добавить напоминание. Никогда не выдумывай содержимое писем и сообщений.'
+    'Ноутбук Макса подключён только для поиска файлов: {"type":"pc_find","q":"слова из названия файла"} — когда Макс просит найти или открыть файл на компьютере (техкарту, прайс, таблицу). Найденное он откроет сам.',
+    'У тебя НЕТ доступа к почте, WhatsApp, Instagram, Telegram и календарю Макса — они ещё не подключены. Если просят проверить их, честно скажи, что это подключим на следующем этапе, и предложи добавить напоминание. Никогда не выдумывай содержимое писем и сообщений.'
   ].join('\n');
   /* бесплатный AI — Google Gemini (любой ключ Google AI Studio), платный — Claude (sk-ant-…) */
   var GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash-lite'];
@@ -598,6 +599,8 @@
           t.remind = !!(t.time || t.due); delete t.demo; c.upd++;
         } else if (a.type === 'show_plan') {
           UI.plan = true;
+        } else if (a.type === 'pc_find' && clean(a.q, 80)) {
+          var pq = clean(a.q, 80); c.pc = 1; setTimeout(function () { PC.find(pq); }, 300);
         }
       } catch (e) { /* пропускаем кривое действие */ }
     });
@@ -612,6 +615,7 @@
     if (c.done) p.push(c.done + ' выполнено');
     if (c.upd) p.push(c.upd + ' изменено');
     if (c.del) p.push(c.del + ' удалено');
+    if (c.pc) p.push('ищу на ноутбуке');
     return p.join(', ');
   }
 
@@ -1084,7 +1088,7 @@
         t = find(id); t.remind = !t.remind; if (t.remind) askNotify(); save(); renderMain(); break;
       case 'edit': openSheet(find(id)); break;
       case 'new-task': openSheet(null); break;
-      case 'close-sheet': closeNote(); closeSheet(); closeMini(); $('link-sheet').hidden = true; break;
+      case 'close-sheet': closeNote(); closeSheet(); closeMini(); $('link-sheet').hidden = true; $('pc-sheet').hidden = true; break;
       case 'close-mini': closeMini(); break;
       case 'delete-task':
         if (UI.editing && armed(el)) { delete el.dataset.armed; el.textContent = 'Удалить'; checkpoint(); S.tasks = S.tasks.filter(function (x) { return x.id !== UI.editing; }); save(); closeSheet(); renderMain(); toast('Дело удалено', '', false, null, true); }
@@ -1114,6 +1118,9 @@
           toast('Заметка удалена', '', false, null, true);
         }
         break;
+      case 'pc': PC.show(); break;
+      case 'pc-open': PC.open(el.dataset.id, el.dataset.name); break;
+      case 'close-pc': PC.hide(); break;
       case 'timbre':
         var ti = TIMBRES.map(function (x) { return x[0]; }).indexOf(S.voice.timbre);
         S.voice.timbre = TIMBRES[(ti + 1) % TIMBRES.length][0]; liveErrShown = false; store(); renderTimbreBtn();
@@ -1573,9 +1580,75 @@
     function bannerClose() { bannerHidden = true; banner(); }
     function off() { S.sync = null; cryptoKey = null; store(); render(); toast('Синхронизация выключена на этом устройстве', ''); }
     function schedule() { if (!on()) return; clearTimeout(timer); timer = setTimeout(run, 1500); }
-    return { run: run, schedule: schedule, render: render, press: press, readLink: readLink, off: off, link: link, banner: banner, bannerGo: bannerGo, bannerAlt: bannerAlt, bannerClose: bannerClose };
+    return { run: run, schedule: schedule, render: render, press: press, readLink: readLink, off: off, link: link, banner: banner, bannerGo: bannerGo, bannerAlt: bannerAlt, bannerClose: bannerClose, enc: enc, dec: dec, base: BASE, on: on };
   })();
   window.DelaSync = SYNC;
+
+  /* ---------- компьютер: помощник на ноутбуке ищет и открывает файлы, сохраняет блокнот в папку ---------- */
+  var PC = (function () {
+    var st = null, pend = {}, timer = null, lastQ = '';
+    function ids() { return SYNC.on() ? { q: S.sync.id + '-pcq', r: S.sync.id + '-pcr' } : null; }
+    function get(id) { return fetch(SYNC.base + id, { cache: 'no-store' }).then(function (r) { if (r.status === 404) return ''; if (!r.ok) throw new Error('хранилище ' + r.status); return r.text(); }).then(function (t) { return t ? SYNC.dec(t) : null; }); }
+    function put(id, obj) { return SYNC.enc(obj).then(function (b) { return fetch(SYNC.base + id, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: b }); }).then(function (r) { if (!r.ok) throw new Error('запись ' + r.status); }); }
+    function online() { return !!(st && st.seen && Date.now() - st.seen < 90e3); }
+    function statusText() {
+      if (!SYNC.on()) return 'Сначала включи синхронизацию — через неё блокнот говорит с ноутбуком.';
+      if (!st || !st.seen) return 'Ноутбук не подключён: помощник на ноутбуке ещё не установлен или выключен.';
+      var d = new Date(st.seen);
+      return online() ? 'Ноутбук на связи ✓ ' + (st.host || '') : 'Ноутбук был на связи в ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ' — сейчас выключен или спит.';
+    }
+    function chip() {
+      var b = document.querySelector('[data-act="pc"]'); if (b) b.style.opacity = online() ? '1' : '';
+    }
+    function fmtSize(n) { return n > 1048576 ? (n / 1048576).toFixed(1) + ' МБ' : Math.max(1, Math.round(n / 1024)) + ' КБ'; }
+    function render() {
+      chip();
+      if ($('pc-sheet').hidden) return;
+      $('pc-status').textContent = statusText();
+      var r = st && st.res ? st.res.filter(function (x) { return x.kind === 'find'; }).slice(-1)[0] : null;
+      var waiting = Object.keys(pend).some(function (k) { return pend[k].kind === 'find'; });
+      var html = '';
+      if (waiting) html = '<div class="empty">Ищу на ноутбуке «' + esc(lastQ) + '»…</div>';
+      else if (r) {
+        html = '<div class="label-sm">«' + esc(r.q) + '»: ' + (r.items.length ? 'нашёл ' + r.items.length : 'ничего не нашёл') + '</div>' + r.items.map(function (it) {
+          return '<button type="button" class="item-body sr-item" data-act="pc-open" data-id="' + esc(it.t) + '" data-name="' + esc(it.name) + '"><span class="item-title">' + esc(it.name) + '</span><span class="item-meta">' + esc(it.dir) + ' · ' + fmtSize(it.size) + ' · открыть на ноутбуке</span></button>';
+        }).join('');
+      }
+      $('pc-res').innerHTML = html;
+      $('pc-folder').textContent = st && st.folder ? 'Дела и заметки сами сохраняются на ноутбуке: ' + st.folder : 'Дела и заметки будут сами сохраняться на ноутбуке в папку «Блатной блокнот» на рабочем столе.';
+    }
+    function poll() {
+      var I = ids(); if (!I) { render(); return Promise.resolve(); }
+      return get(I.r).then(function (R) {
+        if (R) st = R;
+        (st && st.res || []).forEach(function (x) {
+          var p = pend[x.id]; if (!p) return;
+          delete pend[x.id];
+          if (p.kind === 'open') { if (x.ok) toast('Открыл на ноутбуке', x.name || ''); else toast('Не открыл', x.err || '', true); }
+        });
+        Object.keys(pend).forEach(function (k) { if (Date.now() - pend[k].at > 45e3) { var p = pend[k]; delete pend[k]; toast('Ноутбук не ответил', online() ? 'Попробуй ещё раз' : 'Он выключен или спит', true); } });
+        render();
+        if (Object.keys(pend).length) { clearTimeout(timer); timer = setTimeout(poll, 2000); }
+      }).catch(function () { render(); });
+    }
+    function send(req) {
+      var I = ids(); if (!I) { toast('Компьютер', 'Сначала включи синхронизацию', true); return; }
+      req.id = uid(); req.at = Date.now(); pend[req.id] = { kind: req.kind, at: req.at };
+      get(I.q).catch(function () { return null; }).then(function (Q) {
+        var reqs = (Q && Array.isArray(Q.reqs) ? Q.reqs : []).filter(function (x) { return x && Date.now() - x.at < 10 * 60e3; });
+        reqs.push(req);
+        return put(I.q, { v: 1, reqs: reqs.slice(-20) });
+      }).then(function () { clearTimeout(timer); timer = setTimeout(poll, 1500); }, function (e) { delete pend[req.id]; toast('Не отправил на ноутбук', String(e.message || e), true); render(); });
+    }
+    function show() { $('pc-sheet').hidden = false; $('sheet-bg').hidden = false; render(); poll(); }
+    function hide() { $('pc-sheet').hidden = true; if ($('sheet').hidden && $('mini').hidden && $('note-ed').hidden) $('sheet-bg').hidden = true; }
+    function find(q) { q = String(q || '').trim().slice(0, 80); if (!q) return; lastQ = q; $('pc-q').value = q; show(); send({ kind: 'find', q: q }); render(); }
+    function open(t, name) { send({ kind: 'open', t: t }); toast('Открываю на ноутбуке', name || ''); }
+    return { show: show, hide: hide, find: find, open: open, poll: poll };
+  })();
+  setTimeout(function () { PC.poll(); }, 2500);
+  setInterval(function () { if (!document.hidden) PC.poll(); }, 60e3);
+  $('pc-form').addEventListener('submit', function (e) { e.preventDefault(); $('pc-q').blur(); PC.find($('pc-q').value); });
   SYNC.readLink();
   SYNC.render();
   SYNC.banner();

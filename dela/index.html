@@ -71,7 +71,7 @@
         <button type="button" class="see hand-a" data-act="soon" data-name="Почта"><svg width="20" height="20" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M3.4 6.2l17.2-.1.1 12-17.3.1z"/><path d="M3.6 6.4c2.8 2.3 5.6 4.4 8.5 6.4 2.9-2 5.7-4.2 8.4-6.5"/></svg><span>Почта</span></button>
         <button type="button" class="see hand-b" data-act="soon" data-name="WhatsApp"><svg width="20" height="20" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M12.1 3.3c4.8 0 8.6 3.8 8.5 8.6-.1 4.7-3.9 8.4-8.6 8.4-1.4 0-2.8-.4-4-1l-4.6 1.2 1.3-4.3c-.7-1.3-1.1-2.8-1.1-4.4.1-4.7 3.9-8.5 8.5-8.5z"/><path d="M9.2 8.6c.2 2.9 2.6 5.6 5.8 6.4"/></svg><span>WhatsApp</span></button>
         <button type="button" class="see hand-a" data-act="soon" data-name="Instagram"><svg width="20" height="20" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M7.2 3.4l9.6-.1c2.1 0 3.8 1.7 3.8 3.8l.1 9.7c0 2.1-1.7 3.8-3.8 3.8l-9.7.1c-2.1 0-3.8-1.7-3.8-3.8L3.3 7.2c.1-2.1 1.8-3.8 3.9-3.8z"/><path d="M12.1 8.3c2.1 0 3.7 1.7 3.6 3.8 0 2-1.7 3.6-3.8 3.6-2 0-3.6-1.7-3.6-3.7.1-2 1.7-3.7 3.8-3.7z"/><path d="M17 6.8h.1"/></svg><span>Instagram</span></button>
-        <button type="button" class="see hand-b" data-act="soon" data-name="Компьютер"><svg width="20" height="20" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M3.6 4.4l16.9-.1v11.4l-16.9.1z"/><path d="M8.2 20.2c2.6-.2 5.1.1 7.7-.1M12 15.9v4.2"/></svg><span>Компьютер</span></button>
+        <button type="button" class="see hand-b" data-act="pc" data-name="Компьютер"><svg width="20" height="20" viewBox="0 0 24 24" class="ink" aria-hidden="true"><path d="M3.6 4.4l16.9-.1v11.4l-16.9.1z"/><path d="M8.2 20.2c2.6-.2 5.1.1 7.7-.1M12 15.9v4.2"/></svg><span>Компьютер</span></button>
       </div>
     </div>
 
@@ -205,6 +205,19 @@
       </div>
     </div>
   </form>
+
+  <!-- Компьютер -->
+  <div id="pc-sheet" class="sheet hand-a" hidden>
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <div class="fld"><span id="pc-status">Компьютер</span></div>
+    <form id="pc-form" class="ask hand-b search" role="search" autocomplete="off">
+      <label for="pc-q" class="sr">Найти файл на ноутбуке</label>
+      <input id="pc-q" type="search" enterkeyhint="search" placeholder="Найти файл на ноутбуке">
+    </form>
+    <div id="pc-res" class="search-res"></div>
+    <div class="label-sm" id="pc-folder"></div>
+    <div class="sheet-sub"><span></span><button type="button" class="link-btn" data-act="close-pc">Закрыть</button></div>
+  </div>
 
   <!-- Ссылка синхронизации -->
   <div id="link-sheet" class="sheet hand-a" hidden>
