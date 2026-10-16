@@ -7,7 +7,7 @@
   /* постоянный адрес приложения: ссылки синхронизации всегда ведут сюда */
   var CANON = 'https://povarenock141-png.github.io/Telegram-Desktop/dela/';
   var OLD_HOST = location.hostname === 'raw.githack.com';
-  var APP_VERSION = '19';
+  var APP_VERSION = '20';
   var KINDS = { task: 'задача', deal: 'дело', duty: 'обязанность' };
   var KINDS_ACC = { task: 'задачу', deal: 'дело', duty: 'обязанность' };
   var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -251,15 +251,110 @@
   if (TTS) { pickVoice(); try { TTS.addEventListener('voiceschanged', pickVoice); } catch (e) { TTS.onvoiceschanged = pickVoice; } }
   /* iPhone разрешает сайту говорить только после касания: «разогреваем» речь при первом нажатии */
   function ttsUnlock() {
+    audioUnlock();
     if (ttsUnlocked || !TTS) return;
     try { var u = new SpeechSynthesisUtterance(' '); u.volume = 0; TTS.speak(u); ttsUnlocked = true; } catch (e) { /* без речи */ }
+  }
+
+  /* ---------- живой голос Gemini: тем же ключом AI, звук играет через Web Audio ---------- */
+  var TIMBRES = [['Charon', 'спокойный'], ['Kore', 'твёрдый'], ['Puck', 'бодрый'], ['Sulafat', 'тёплый'], ['iphone', 'голос iPhone']];
+  if (!S.voice.timbre) S.voice.timbre = 'Charon';
+  var actx = null, analyser = null, liveSrc = null, liveOn = false, liveErrShown = false, ampBuf = null;
+  function audioUnlock() {
+    try {
+      if (navigator.audioSession) navigator.audioSession.type = 'playback';
+      if (!actx) {
+        var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+        actx = new AC(); analyser = actx.createAnalyser(); analyser.fftSize = 512; analyser.connect(actx.destination);
+        ampBuf = new Uint8Array(analyser.fftSize);
+      }
+      if (actx.state === 'suspended') actx.resume();
+    } catch (e) { actx = null; }
+  }
+  function liveAllowed() { return !!(S.aiKey && !/^sk-ant/.test(S.aiKey) && S.voice.timbre !== 'iphone'); }
+  function b64buf(b) { var s = atob(b), a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a.buffer; }
+  function pcmWav(buf, rate) {
+    var n = buf.byteLength, out = new ArrayBuffer(44 + n), v = new DataView(out), w = function (o, s) { for (var i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n, true);
+    new Uint8Array(out, 44).set(new Uint8Array(buf)); return out;
+  }
+  function toWav(b64, mime) {
+    var buf = b64buf(b64), m = String(mime || '');
+    if (/wav/i.test(m)) return buf;
+    var rate = parseInt((m.match(/rate=(\d+)/) || [])[1], 10) || 24000;
+    return pcmWav(buf, rate);
+  }
+  var GEM = 'https://generativelanguage.googleapis.com/v1beta/';
+  function ttsNew(text) {
+    return fetch(GEM + 'interactions', {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': S.aiKey },
+      body: JSON.stringify({ model: 'gemini-3.8-flash-tts', input: [{ type: 'user_input', content: [{ type: 'text', text: text, annotations: [{ type: 'speech_metadata', style: 'calm, warm and friendly, natural pace' }] }] }],
+        response_format: { type: 'audio' }, generation_config: { speech_config: [{ voice: S.voice.timbre }] } })
+    }).then(function (r) { return r.json().then(function (j) {
+      if (!r.ok) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status));
+      var hit = null;
+      if (j.output_audio && j.output_audio.data) hit = j.output_audio;
+      (j.steps || []).forEach(function (st) { (st.content || []).forEach(function (c) { if (!hit && c && c.data && (c.type === 'audio' || /audio/.test(c.mime_type || c.mimeType || ''))) hit = c; }); });
+      if (!hit) throw new Error('в ответе нет звука');
+      return toWav(hit.data, hit.mime_type || hit.mimeType || 'audio/wav');
+    }); });
+  }
+  function ttsOld(text) {
+    return fetch(GEM + 'models/gemini-3.1-flash-tts-preview:generateContent', {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': S.aiKey },
+      body: JSON.stringify({ contents: [{ parts: [{ text: text }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: S.voice.timbre } } } } })
+    }).then(function (r) { return r.json().then(function (j) {
+      if (!r.ok) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status));
+      var parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [], hit = null;
+      parts.forEach(function (p) { var d = p.inlineData || p.inline_data; if (!hit && d && d.data) hit = d; });
+      if (!hit) throw new Error('в ответе нет звука');
+      return toWav(hit.data, hit.mimeType || hit.mime_type);
+    }); });
+  }
+  function decode(buf) { return new Promise(function (res, rej) { var p = actx.decodeAudioData(buf, res, rej); if (p && p.then) p.then(res, rej); }); }
+  function liveStop() { if (liveSrc) { try { liveSrc.onended = null; liveSrc.stop(); } catch (e) { /* уже остановлен */ } liveSrc = null; } liveOn = false; }
+  function liveSpeak(say) {
+    audioUnlock();
+    if (!actx) return Promise.reject(new Error('звук недоступен'));
+    if (ORB) ORB.set('think');
+    return ttsNew(say).catch(function () { return ttsOld(say); }).then(decode).then(function (ab) {
+      liveStop();
+      var src = actx.createBufferSource(); src.buffer = ab; src.connect(analyser);
+      src.onended = function () { if (liveSrc === src) { liveSrc = null; liveOn = false; ttsSpeaking = false; if (ORB && UI.mode === 'idle') ORB.set('idle'); } };
+      liveSrc = src; liveOn = true; ttsSpeaking = true; if (ORB) ORB.set('speak');
+      src.start(0);
+    });
+  }
+  function liveLevel() {
+    if (!liveOn || !analyser) return 0;
+    analyser.getByteTimeDomainData(ampBuf);
+    var sum = 0; for (var i = 0; i < ampBuf.length; i++) { var x = (ampBuf[i] - 128) / 128; sum += x * x; }
+    return Math.min(1, Math.sqrt(sum / ampBuf.length) * 4);
+  }
+  function renderTimbreBtn() {
+    var b = $('timbre-btn'); if (!b) return;
+    b.hidden = !(S.aiKey && !/^sk-ant/.test(S.aiKey));
+    var t = TIMBRES.filter(function (x) { return x[0] === S.voice.timbre; })[0] || TIMBRES[0];
+    b.textContent = 'Тембр: ' + (t[0] === 'iphone' ? t[1] : t[0] + ' · ' + t[1]);
   }
   function quietNow() { var h = new Date().getHours(); return h >= 23 || h < 8; }
   function speakOut(text, byVoice) {
     var m = S.voice.mode;
-    if (!TTS || m === 'off' || (m === 'voice' && !byVoice) || (m === 'always' && !byVoice && quietNow())) return false;
+    if ((!TTS && !liveAllowed()) || m === 'off' || (m === 'voice' && !byVoice) || (m === 'always' && !byVoice && quietNow())) return false;
     var say = String(text || '').replace(/[«»"*_#]/g, '').replace(/\s+/g, ' ').trim().slice(0, 600);
     if (!say) return false;
+    if (liveAllowed()) {
+      liveSpeak(say.slice(0, 400)).catch(function (err) {
+        if (ORB && UI.mode === 'idle') ORB.set('idle');
+        if (!liveErrShown) { liveErrShown = true; toast('Живой голос не ответил', String(err && err.message || err).slice(0, 90) + ' — говорю голосом iPhone', true); }
+        iphoneSpeak(say);
+      });
+      return true;
+    }
+    return TTS ? iphoneSpeak(say) : false;
+  }
+  function iphoneSpeak(say) {
     try {
       TTS.cancel();
       var u = new SpeechSynthesisUtterance(say);
@@ -271,8 +366,8 @@
       return true;
     } catch (e) { return false; }
   }
-  function ttsStop() { if (TTS && (TTS.speaking || ttsSpeaking)) { TTS.cancel(); ttsSpeaking = false; if (ORB && UI.mode === 'idle') ORB.set('idle'); return true; } return false; }
-  function renderVoiceBtn() { var b = $('voice-btn'); if (b) b.textContent = 'Голос: ' + VOICE_MODES[S.voice.mode]; }
+  function ttsStop() { var was = liveOn || ttsSpeaking || (TTS && TTS.speaking); liveStop(); if (TTS) TTS.cancel(); ttsSpeaking = false; if (was && ORB && UI.mode === 'idle') ORB.set('idle'); return !!was; }
+  function renderVoiceBtn() { var b = $('voice-btn'); if (b) b.textContent = 'Голос: ' + VOICE_MODES[S.voice.mode]; renderTimbreBtn(); }
 
   /* шар «говорит», пока появляется ответ */
   var speakTimer = null;
@@ -456,6 +551,7 @@
     });
   }
   function renderAiBtn() {
+    renderTimbreBtn();
     var b = $('ai-setup'); if (!b) return;
     var a = S.ai || {};
     if (!S.aiKey) b.textContent = 'Подключить AI';
@@ -1018,6 +1114,11 @@
           toast('Заметка удалена', '', false, null, true);
         }
         break;
+      case 'timbre':
+        var ti = TIMBRES.map(function (x) { return x[0]; }).indexOf(S.voice.timbre);
+        S.voice.timbre = TIMBRES[(ti + 1) % TIMBRES.length][0]; liveErrShown = false; store(); renderTimbreBtn();
+        speakOut(S.voice.timbre === 'iphone' ? 'Это голос iPhone.' : 'Привет, Макс. Так звучит мой голос.', true);
+        break;
       case 'voice-mode':
         S.voice.mode = { voice: 'always', always: 'off', off: 'voice' }[S.voice.mode]; store(); renderVoiceBtn();
         if (S.voice.mode !== 'off') speakOut(S.voice.mode === 'always' ? 'Буду отвечать голосом всегда, кроме ночи.' : 'Отвечу голосом, когда спросишь голосом.', true);
@@ -1242,7 +1343,7 @@
     }).then(function () { if (current() === 'sketch') skStatus(); });
   }
   try { if (window.AIOrb) ORB = window.AIOrb($('orb-cv'), { energy: 1.3 }); } catch (e) { ORB = null; }
-  if (ORB) ORB.amp(function () { if (!ttsSpeaking) return 0; ttsBump *= 0.92; return 0.3 + 0.7 * Math.max(ttsBump, 0.4 * Math.abs(Math.sin(Date.now() / 140))); });
+  if (ORB) ORB.amp(function () { if (liveOn) return 0.15 + liveLevel(); if (!ttsSpeaking) return 0; ttsBump *= 0.92; return 0.3 + 0.7 * Math.max(ttsBump, 0.4 * Math.abs(Math.sin(Date.now() / 140))); });
   document.addEventListener('click', ttsUnlock, true);
   document.addEventListener('touchend', ttsUnlock, true);
   $('orb').addEventListener('click', function () { if (ttsStop()) toast('Замолчал', ''); });
