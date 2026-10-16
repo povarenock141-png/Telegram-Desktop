@@ -7,7 +7,7 @@
   /* постоянный адрес приложения: ссылки синхронизации всегда ведут сюда */
   var CANON = 'https://povarenock141-png.github.io/Telegram-Desktop/dela/';
   var OLD_HOST = location.hostname === 'raw.githack.com';
-  var APP_VERSION = '18';
+  var APP_VERSION = '19';
   var KINDS = { task: 'задача', deal: 'дело', duty: 'обязанность' };
   var KINDS_ACC = { task: 'задачу', deal: 'дело', duty: 'обязанность' };
   var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -239,6 +239,41 @@
   function taskReply(t) {
     return 'Добавил ' + KINDS_ACC[t.kind] + ': «' + t.title + '»' + (t.daily ? ', ежедневно' : t.date !== today() ? ', ' + dateLabel(t.date) : '') + (t.time ? ', в ' + t.time : '') + (t.due ? ', до ' + t.due : '') + '.';
   }
+  /* ---------- ответ голосом (голос iPhone, бесплатно, без интернета) ---------- */
+  var VOICE_MODES = { voice: 'если спросил голосом', always: 'всегда', off: 'выкл' };
+  S.voice = S.voice && VOICE_MODES[S.voice.mode] ? S.voice : { mode: 'voice', rate: 1.1 };
+  var TTS = window.speechSynthesis || null, ttsUnlocked = false, ttsBump = 0, ttsSpeaking = false, ruVoice = null;
+  function pickVoice() {
+    if (!TTS) return;
+    var vs = TTS.getVoices().filter(function (v) { return /^ru/i.test(v.lang); });
+    ruVoice = vs.filter(function (v) { return /enhanced|premium|улучш/i.test(v.name + ' ' + v.voiceURI); })[0] || vs.filter(function (v) { return /milena|yuri/i.test(v.name); })[0] || vs[0] || null;
+  }
+  if (TTS) { pickVoice(); try { TTS.addEventListener('voiceschanged', pickVoice); } catch (e) { TTS.onvoiceschanged = pickVoice; } }
+  /* iPhone разрешает сайту говорить только после касания: «разогреваем» речь при первом нажатии */
+  function ttsUnlock() {
+    if (ttsUnlocked || !TTS) return;
+    try { var u = new SpeechSynthesisUtterance(' '); u.volume = 0; TTS.speak(u); ttsUnlocked = true; } catch (e) { /* без речи */ }
+  }
+  function quietNow() { var h = new Date().getHours(); return h >= 23 || h < 8; }
+  function speakOut(text, byVoice) {
+    var m = S.voice.mode;
+    if (!TTS || m === 'off' || (m === 'voice' && !byVoice) || (m === 'always' && !byVoice && quietNow())) return false;
+    var say = String(text || '').replace(/[«»"*_#]/g, '').replace(/\s+/g, ' ').trim().slice(0, 600);
+    if (!say) return false;
+    try {
+      TTS.cancel();
+      var u = new SpeechSynthesisUtterance(say);
+      u.lang = 'ru-RU'; if (ruVoice) u.voice = ruVoice; u.rate = S.voice.rate || 1.1;
+      u.onstart = function () { ttsSpeaking = true; ttsBump = 1; if (ORB) ORB.set('speak'); };
+      u.onboundary = function () { ttsBump = 1; };
+      u.onend = u.onerror = function () { ttsSpeaking = false; if (ORB && UI.mode === 'idle') ORB.set('idle'); };
+      TTS.speak(u);
+      return true;
+    } catch (e) { return false; }
+  }
+  function ttsStop() { if (TTS && (TTS.speaking || ttsSpeaking)) { TTS.cancel(); ttsSpeaking = false; if (ORB && UI.mode === 'idle') ORB.set('idle'); return true; } return false; }
+  function renderVoiceBtn() { var b = $('voice-btn'); if (b) b.textContent = 'Голос: ' + VOICE_MODES[S.voice.mode]; }
+
   /* шар «говорит», пока появляется ответ */
   var speakTimer = null;
   function orbSpeak(text) {
@@ -247,7 +282,9 @@
     speakTimer = setTimeout(function () { if (UI.mode === 'idle') ORB.set('idle'); }, Math.min(4000, 900 + String(text || '').length * 35));
   }
   function showReply(text, heard) {
-    UI.heard = heard || ''; UI.reply = text; setTimeout(function () { orbSpeak(text); }, 0);
+    UI.heard = heard || ''; UI.reply = text;
+    var spoke = speakOut(text, !!heard);
+    if (!spoke) setTimeout(function () { orbSpeak(text); }, 0);
     if (current() === 'notes') { renderNotes(); toast('AI', text); } else renderMain();
   }
   function command(text, source) {
@@ -981,6 +1018,11 @@
           toast('Заметка удалена', '', false, null, true);
         }
         break;
+      case 'voice-mode':
+        S.voice.mode = { voice: 'always', always: 'off', off: 'voice' }[S.voice.mode]; store(); renderVoiceBtn();
+        if (S.voice.mode !== 'off') speakOut(S.voice.mode === 'always' ? 'Буду отвечать голосом всегда, кроме ночи.' : 'Отвечу голосом, когда спросишь голосом.', true);
+        else ttsStop();
+        break;
       case 'theme': S.theme = { auto: 'dark', dark: 'light', light: 'auto' }[S.theme || 'auto']; store(); applyTheme(); break;
       case 'sk-tool': skTool(el.dataset.val); break;
       case 'sk-undo': skUndo(); break;
@@ -1200,6 +1242,11 @@
     }).then(function () { if (current() === 'sketch') skStatus(); });
   }
   try { if (window.AIOrb) ORB = window.AIOrb($('orb-cv'), { energy: 1.3 }); } catch (e) { ORB = null; }
+  if (ORB) ORB.amp(function () { if (!ttsSpeaking) return 0; ttsBump *= 0.92; return 0.3 + 0.7 * Math.max(ttsBump, 0.4 * Math.abs(Math.sin(Date.now() / 140))); });
+  document.addEventListener('click', ttsUnlock, true);
+  document.addEventListener('touchend', ttsUnlock, true);
+  $('orb').addEventListener('click', function () { if (ttsStop()) toast('Замолчал', ''); });
+  renderVoiceBtn();
   applyTheme();
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { checkReminders(); } });
 

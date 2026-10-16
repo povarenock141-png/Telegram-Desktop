@@ -24,7 +24,7 @@
       var t = (now - st.t0) / 1000, dt = Math.min(0.05, (now - (st.last || now)) / 1000); st.last = now;
       var s = st.s;
       var target = s === 'listen' ? 0.35 + 0.65 * Math.abs(Math.sin(t * 3.4) * Math.sin(t * 1.9 + 1))
-        : s === 'speak' ? (ext ? ext() : 0.3 + 0.7 * Math.abs(Math.sin(t * 6.8)) * (0.6 + 0.4 * Math.sin(t * 1.4)))
+        : s === 'speak' ? ((ext && ext()) || 0.3 + 0.7 * Math.abs(Math.sin(t * 6.8)) * (0.6 + 0.4 * Math.sin(t * 1.4)))
         : s === 'think' ? 0.45 : 0.12;
       st.amp += (target - st.amp) * 0.18;
       var amp = Math.min(1.6, st.amp * E);
