@@ -6,7 +6,7 @@
   /* постоянный адрес приложения: ссылки синхронизации всегда ведут сюда */
   var CANON = 'https://povarenock141-png.github.io/Telegram-Desktop/dela/';
   var OLD_HOST = location.hostname === 'raw.githack.com';
-  var APP_VERSION = '15';
+  var APP_VERSION = '16';
   var KINDS = { task: 'задача', deal: 'дело', duty: 'обязанность' };
   var KINDS_ACC = { task: 'задачу', deal: 'дело', duty: 'обязанность' };
   var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -94,6 +94,13 @@
   function validList(a, field) {
     return (Array.isArray(a) ? a : []).filter(function (x) { return x && typeof x === 'object' && typeof x.id === 'string' && x.id.length < 40 && typeof x[field] === 'string'; });
   }
+  function validSketch(x) {
+    if (!x || typeof x !== 'object' || !Array.isArray(x.strokes) || typeof x.u !== 'number') return null;
+    var strokes = x.strokes.filter(function (s) {
+      return s && (s.t === 'pen' || s.t === 'marker' || s.t === 'eraser') && typeof s.w === 'number' && Array.isArray(s.p) && s.p.length >= 2 && s.p.length % 2 === 0 && s.p.every(function (v) { return typeof v === 'number' && isFinite(v); });
+    }).slice(0, 4000);
+    return { strokes: strokes, u: x.u };
+  }
   function mergeRemote(R) {
     var del = Object.assign({}, R.del || {});
     Object.keys(S.del || {}).forEach(function (id) { del[id] = Math.max(del[id] || 0, S.del[id]); });
@@ -122,10 +129,12 @@
     S.notes = un(validList(R.notes, 'body'), S.notes);
     S.del = del;
     if ((R.metaU || 0) > (S.metaU || 0)) { S.place = R.place; S.aiKey = R.aiKey; S.metaU = R.metaU; }
+    var rs = validSketch(R.sketch);
+    if (rs && rs.u > ((S.sketch && S.sketch.u) || 0)) S.sketch = rs;
     takeSnap(); store();
   }
   function payload() {
-    return { v: 1, tasks: S.tasks, notes: S.notes, del: S.del || {}, place: S.place, aiKey: S.aiKey || '', metaU: S.metaU || 0, at: Date.now() };
+    return { v: 1, tasks: S.tasks, notes: S.notes, del: S.del || {}, place: S.place, aiKey: S.aiKey || '', metaU: S.metaU || 0, sketch: S.sketch || { strokes: [], u: 0 }, at: Date.now() };
   }
   takeSnap();
 
@@ -601,8 +610,8 @@
     $('notes-list').innerHTML = c ? S.notes.map(function (n) {
       var d = new Date(n.created);
       var when = dstr(d) === today() ? 'сегодня ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) : dateLabel(dstr(d));
-      return '<div class="note" id="note-' + n.id + '"><div class="note-top"><div class="note-title">' + esc(n.title) + '</div><div class="note-when">' + esc(when) + '</div></div>' +
-        '<div class="note-body">' + esc(n.body) + '</div>' +
+      return '<div class="note" id="note-' + n.id + '"><div class="note-top" data-act="edit-note" data-id="' + n.id + '"><div class="note-title">' + esc(n.title) + '</div><div class="note-when">' + esc(when) + '</div></div>' +
+        '<div class="note-body" data-act="edit-note" data-id="' + n.id + '">' + esc(n.body) + '</div>' +
         (n.converted.length ? '<div class="note-done"><span class="label-sm">Добавлено в дела</span>' + n.converted.map(function (x) { return '<div>✓ ' + esc(x) + '</div>'; }).join('') + '</div>' : '') +
         '<div class="note-acts">' +
         (n.converted.length ? '' : '<button type="button" class="chip" data-act="to-tasks" data-id="' + n.id + '"><svg width="16" height="16" viewBox="0 0 40 40" aria-hidden="true"><path d="M20.3 3.5 C21 11, 22 16.5, 29 19.2 C 22.5 21, 21.2 25.5, 20 36.2 C 18.8 26, 17.6 21.6, 10.8 20.4 C 17.8 18.8, 19.2 12, 20.3 3.5 Z" fill="none" stroke="#1C1A3A" stroke-width="2.6" stroke-linejoin="round"/></svg>Разобрать в дела</button>') +
@@ -610,6 +619,64 @@
         '<button type="button" class="link-btn danger" data-act="del-note" data-id="' + n.id + '">Удалить</button>' +
         '</div></div>';
     }).join('') : '<div class="empty">Заметок пока нет — напиши или нажми микрофон</div>';
+    renderSearch();
+  }
+
+  /* ---------- поиск по делам, заметкам и архиву ---------- */
+  function norm(s) { return String(s == null ? '' : s).toLowerCase().replace(/ё/g, 'е'); }
+  function qWords() { return norm($('q').value).trim().split(/\s+/).filter(Boolean); }
+  function hl(text, words) {
+    text = String(text || '');
+    if (!words.length) return esc(text);
+    var re = new RegExp('(' + words.map(function (w) { return w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/е/g, '[её]'); }).join('|') + ')', 'gi');
+    return text.split(re).map(function (part, i) { return i % 2 ? '<mark>' + esc(part) + '</mark>' : esc(part); }).join('');
+  }
+  function snippet(body, words) {
+    var b = String(body || ''), nb = norm(b), at = -1;
+    words.forEach(function (w) { var i = nb.indexOf(w); if (i >= 0 && (at < 0 || i < at)) at = i; });
+    if (at < 0) return b.slice(0, 90);
+    var s = Math.max(0, at - 40);
+    return (s ? '…' : '') + b.slice(s, s + 110) + (s + 110 < b.length ? '…' : '');
+  }
+  function renderSearch() {
+    var words = qWords(), on = words.length > 0;
+    $('search-res').hidden = !on; $('notes-list').hidden = on; $('note-form').hidden = on;
+    if (!on) { $('search-res').innerHTML = ''; return; }
+    var hit = function (s) { s = norm(s); return words.every(function (w) { return s.indexOf(w) >= 0; }); };
+    var ts = S.tasks.filter(function (t) { return hit(t.title); });
+    var ns = S.notes.filter(function (n) { return hit(n.title + ' ' + n.body); });
+    var html = '';
+    if (ts.length) html += '<div class="label-sm">Дела: ' + ts.length + '</div>' + ts.map(function (t) {
+      return '<button type="button" class="item-body sr-item" data-act="edit" data-id="' + t.id + '"><span class="item-title">' + hl(t.title, words) + '</span><span class="item-meta">' + esc(meta(t) + (isDone(t) ? ' · выполнено' : '')) + '</span></button>';
+    }).join('');
+    if (ns.length) html += '<div class="label-sm">Заметки: ' + ns.length + '</div>' + ns.map(function (n) {
+      return '<button type="button" class="item-body sr-item" data-act="edit-note" data-id="' + n.id + '"><span class="item-title">' + hl(n.title, words) + '</span><span class="item-meta">' + hl(snippet(n.body, words), words) + '</span></button>';
+    }).join('');
+    $('search-res').innerHTML = html || '<div class="empty">Ничего не нашёл</div>';
+  }
+
+  /* ---------- редактор заметки: правка сохраняется сама ---------- */
+  var editingNote = null, neTimer = null;
+  function openNote(id) {
+    var n = findNote(id); if (!n) return;
+    editingNote = id;
+    $('ne-title').value = n.title; $('ne-body').value = n.body;
+    $('ne-saved').textContent = 'Сохраняется само';
+    $('note-ed').hidden = false; $('sheet-bg').hidden = false;
+  }
+  function neFlush() {
+    clearTimeout(neTimer); neTimer = null;
+    var n = editingNote && findNote(editingNote); if (!n) return;
+    var t = $('ne-title').value.trim() || 'Заметка', b = $('ne-body').value;
+    if (n.title === t && n.body === b) return;
+    n.title = t; n.body = b; save();
+    var d = new Date(); $('ne-saved').textContent = 'Сохранено в ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+  function closeNote() {
+    if (!editingNote) return;
+    neFlush(); editingNote = null;
+    $('note-ed').hidden = true; $('sheet-bg').hidden = true;
+    if (current() === 'notes') renderNotes(); else renderMain();
   }
   function flashNote(id) {
     var el = $('note-' + id); if (!el) return;
@@ -618,19 +685,21 @@
   }
 
   /* ---------- экраны ---------- */
-  function current() { return location.hash === '#notes' ? 'notes' : 'main'; }
+  function current() { return location.hash === '#notes' ? 'notes' : location.hash === '#sketch' ? 'sketch' : 'main'; }
   function route() {
     var v = current();
     $('view-main').hidden = v !== 'main';
     $('view-notes').hidden = v !== 'notes';
-    if (v === 'notes') renderNotes(); else renderMain();
+    $('view-sketch').hidden = v !== 'sketch';
+    $('mic-fab').hidden = v === 'sketch';
+    if (v === 'notes') renderNotes(); else if (v === 'sketch') requestAnimationFrame(skSize); else renderMain();
     window.scrollTo(0, 0);
   }
 
   /* ---------- уведомление ---------- */
   var toastTimer = null;
   function toast(title, sub, keep, taskId, undo) {
-    UI.toastFor = taskId || null;
+    UI.toastFor = taskId || null; UI.skUndo = false;
     $('toast-title').textContent = title;
     $('toast-sub').textContent = sub || '';
     $('toast-undo').hidden = !undo;
@@ -822,6 +891,7 @@
         t = find(id); if (t) { uncomplete(t); renderMain(); toast('Вернул: ' + t.title, ''); }
         break;
       case 'undo':
+        if (UI.skUndo && sk.cleared) { S.sketch.strokes = sk.cleared; sk.cleared = null; UI.skUndo = false; skCommit(); $('toast').hidden = true; break; }
         if (lastDone) { t = find(lastDone); if (t) uncomplete(t); lastDone = null; }
         else if (rollback()) toast('Вернул как было', '');
         $('toast').hidden = true; if (current() === 'notes') renderNotes(); else renderMain();
@@ -872,7 +942,7 @@
         t = find(id); t.remind = !t.remind; if (t.remind) askNotify(); save(); renderMain(); break;
       case 'edit': openSheet(find(id)); break;
       case 'new-task': openSheet(null); break;
-      case 'close-sheet': closeSheet(); closeMini(); $('link-sheet').hidden = true; break;
+      case 'close-sheet': closeNote(); closeSheet(); closeMini(); $('link-sheet').hidden = true; break;
       case 'close-mini': closeMini(); break;
       case 'delete-task':
         if (UI.editing && armed(el)) { delete el.dataset.armed; el.textContent = 'Удалить'; checkpoint(); S.tasks = S.tasks.filter(function (x) { return x.id !== UI.editing; }); save(); closeSheet(); renderMain(); toast('Дело удалено', '', false, null, true); }
@@ -890,7 +960,24 @@
       case 'new-sticker':
         ask('Текст стикера', '', function (v) { if (v.trim()) { addNote(v, true, false); renderMain(); } });
         break;
-      case 'open-note': location.hash = '#notes'; setTimeout(function () { flashNote(id); }, 120); break;
+      case 'open-note': location.hash = '#notes'; setTimeout(function () { openNote(id); }, 150); break;
+      case 'edit-note': openNote(id); break;
+      case 'ne-del':
+        if (editingNote && armed(el)) {
+          delete el.dataset.armed; el.textContent = 'Удалить';
+          var gone = editingNote; editingNote = null; clearTimeout(neTimer);
+          checkpoint(); S.notes = S.notes.filter(function (x) { return x.id !== gone; }); save();
+          $('note-ed').hidden = true; $('sheet-bg').hidden = true;
+          if (current() === 'notes') renderNotes(); else renderMain();
+          toast('Заметка удалена', '', false, null, true);
+        }
+        break;
+      case 'theme': S.theme = { auto: 'dark', dark: 'light', light: 'auto' }[S.theme || 'auto']; store(); applyTheme(); break;
+      case 'sk-tool': skTool(el.dataset.val); break;
+      case 'sk-undo': skUndo(); break;
+      case 'sk-clear': if (armed(el)) { delete el.dataset.armed; el.textContent = 'Очистить лист'; skClear(); } break;
+      case 'sk-share': skShare(); break;
+      case 'sk-note': skToNote(); break;
       case 'go-main': e.preventDefault(); location.hash = ''; break;
       case 'pin': n = findNote(id); n.pinned = !n.pinned; save(); renderNotes(); break;
       case 'del-note':
@@ -934,11 +1021,180 @@
     if (active) voiceStop(); else voiceStart();
   });
   window.addEventListener('hashchange', route);
+  $('note-ed').addEventListener('submit', function (e) { e.preventDefault(); closeNote(); });
+  $('ne-title').addEventListener('input', function () { clearTimeout(neTimer); neTimer = setTimeout(neFlush, 500); });
+  $('ne-body').addEventListener('input', function () { clearTimeout(neTimer); neTimer = setTimeout(neFlush, 500); });
+  document.addEventListener('visibilitychange', function () { if (document.hidden) neFlush(); });
+  $('q').addEventListener('input', renderSearch);
+  $('search-form').addEventListener('submit', function (e) { e.preventDefault(); $('q').blur(); });
+  $('sheet').addEventListener('submit', function () { if (current() === 'notes') setTimeout(renderSearch, 0); });
+  window.addEventListener('resize', function () { if (current() === 'sketch') skSize(); });
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme); } catch (e) { /* старый браузер */ }
+
+  /* ---------- тема ---------- */
+  function applyTheme() {
+    var t = S.theme || 'auto', root = document.documentElement;
+    if (t === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', t);
+    var dark = t === 'dark' || (t === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+    var m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', dark ? '#15141F' : '#F6F3EA');
+    $('theme-btn').textContent = 'Тема: ' + { auto: 'авто', light: 'светлая', dark: 'тёмная' }[t];
+    if (current() === 'sketch') skRebuild();
+  }
+
+  /* ---------- лист: рисунок пальцем, хранится векторами, синхронизируется ---------- */
+  var SK_W = 1000, SK_H = 1400;
+  var TOOLS = { pen: 3.2, marker: 16, eraser: 30 };
+  var sk = { tool: 'pen', cur: null, pid: null, base: null, k: 1, raf: 0, cleared: null };
+  S.sketch = S.sketch && Array.isArray(S.sketch.strokes) ? S.sketch : { strokes: [], u: 0 };
+  function inkColor() { return getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#1C1A3A'; }
+  function drawStroke(ctx, s, k, ink) {
+    var p = s.p; if (!p || p.length < 2) return;
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = s.w * k;
+    if (s.t === 'eraser') { ctx.globalCompositeOperation = 'destination-out'; ctx.strokeStyle = '#000'; }
+    else if (s.t === 'marker') { ctx.globalAlpha = 0.35; ctx.strokeStyle = '#8A8A3A'; }
+    else ctx.strokeStyle = ink;
+    ctx.beginPath(); ctx.moveTo(p[0] * k, p[1] * k);
+    if (p.length === 2) ctx.lineTo(p[0] * k + 0.1, p[1] * k);
+    for (var i = 2; i < p.length - 2; i += 2) ctx.quadraticCurveTo(p[i] * k, p[i + 1] * k, (p[i] + p[i + 2]) / 2 * k, (p[i + 1] + p[i + 3]) / 2 * k);
+    if (p.length >= 4) ctx.lineTo(p[p.length - 2] * k, p[p.length - 1] * k);
+    ctx.stroke(); ctx.restore();
+  }
+  function skRebuild() {
+    var c = $('sk'); if (!c || !c.width) return;
+    if (!sk.base) sk.base = document.createElement('canvas');
+    sk.base.width = c.width; sk.base.height = c.height;
+    var bx = sk.base.getContext('2d'), ink = inkColor();
+    S.sketch.strokes.forEach(function (s) { drawStroke(bx, s, sk.k, ink); });
+    skDraw(); skStatus();
+  }
+  function skDraw() {
+    sk.raf = 0;
+    var c = $('sk'), ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, c.width, c.height);
+    if (sk.base) ctx.drawImage(sk.base, 0, 0);
+    if (sk.cur) drawStroke(ctx, sk.cur, sk.k, inkColor());
+  }
+  function skSize() {
+    var c = $('sk'); var w = c.clientWidth; if (!w) return;
+    var dpr = Math.min(2, window.devicePixelRatio || 1), h = w * SK_H / SK_W;
+    c.style.height = h + 'px'; c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+    sk.k = c.width / SK_W; skRebuild();
+  }
+  function skStatus() {
+    var n = S.sketch.strokes.length;
+    $('sk-status').textContent = n ? 'Штрихов: ' + n + (S.sync && S.sync.id ? ' · синхронизируется' : '') : 'Лист пустой';
+  }
+  function skTool(t) {
+    sk.tool = TOOLS[t] ? t : 'pen';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-act="sk-tool"]'), function (b) { b.classList.toggle('on', b.dataset.val === sk.tool); });
+  }
+  function skCommit() { S.sketch.u = Date.now(); store(); if (window.DelaSync) window.DelaSync.schedule(); skRebuild(); }
+  function skUndo() { if (!S.sketch.strokes.length) return; S.sketch.strokes.pop(); skCommit(); }
+  function skClear() {
+    if (!S.sketch.strokes.length) return;
+    var old = S.sketch.strokes; S.sketch.strokes = []; skCommit();
+    toast('Лист очищен', '', false, null, true); sk.cleared = old; UI.skUndo = true;
+  }
+  function skPoint(e) {
+    var r = $('sk').getBoundingClientRect();
+    var x = Math.round((e.clientX - r.left) / r.width * SK_W), y = Math.round((e.clientY - r.top) / r.height * SK_H);
+    x = Math.max(0, Math.min(SK_W, x)); y = Math.max(0, Math.min(SK_H, y));
+    var p = sk.cur.p, n = p.length;
+    if (n && Math.abs(p[n - 2] - x) + Math.abs(p[n - 1] - y) < 3) return;
+    p.push(x, y);
+  }
+  (function () {
+    var c = $('sk');
+    c.addEventListener('pointerdown', function (e) {
+      if (sk.cur || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      e.preventDefault();
+      try { c.setPointerCapture(e.pointerId); } catch (er) { /* без захвата тоже рисует */ }
+      sk.pid = e.pointerId; sk.cur = { t: sk.tool, w: TOOLS[sk.tool], p: [] };
+      skPoint(e); skDraw();
+    });
+    c.addEventListener('pointermove', function (e) {
+      if (!sk.cur || e.pointerId !== sk.pid) return;
+      e.preventDefault();
+      var list = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+      (list.length ? list : [e]).forEach(skPoint);
+      if (!sk.raf) sk.raf = requestAnimationFrame(skDraw);
+    });
+    function end(e) {
+      if (!sk.cur || e.pointerId !== sk.pid) return;
+      var s = sk.cur; sk.cur = null; sk.pid = null;
+      if (s.p.length >= 2) { S.sketch.strokes.push(s); skCommit(); } else skDraw();
+    }
+    c.addEventListener('pointerup', end);
+    c.addEventListener('pointercancel', end);
+  })();
+  /* картинка листа: всегда тёмные чернила на светлой бумаге */
+  function skImage(type) {
+    var W = SK_W, Hh = SK_H, layer = document.createElement('canvas'), out = document.createElement('canvas');
+    layer.width = out.width = W; layer.height = out.height = Hh;
+    var lx = layer.getContext('2d');
+    S.sketch.strokes.forEach(function (s) { drawStroke(lx, s, 1, '#1C1A3A'); });
+    var ox = out.getContext('2d'); ox.fillStyle = '#FFFDF6'; ox.fillRect(0, 0, W, Hh); ox.drawImage(layer, 0, 0);
+    return out.toDataURL(type || 'image/png', 0.88);
+  }
+  function dataFile(url, name) {
+    var parts = url.split(','), mime = parts[0].match(/:(.*?);/)[1], bin = atob(parts[1]), a = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+    return new File([a], name, { type: mime });
+  }
+  function skShare() {
+    if (!S.sketch.strokes.length) { toast('Лист пустой', 'Сначала напиши или нарисуй что-нибудь'); return; }
+    var url = skImage('image/png'), name = 'list-' + today() + '.png', f = dataFile(url, name);
+    if (navigator.canShare && navigator.canShare({ files: [f] })) { navigator.share({ files: [f], title: 'Лист' }).catch(function () {}); return; }
+    var a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    toast('Картинка сохранена', name);
+  }
+  var VISION_PROMPT = 'На картинке — страница, написанная от руки. Перепиши весь рукописный текст по-русски, сохраняя строки и списки. Исправь только явные ошибки распознавания, ничего не добавляй от себя. Если текста нет — ответь одним символом «—». Если есть рисунок или схема — в конце одной строкой опиши его, начиная со слова «Рисунок:». Ответ — только текст, без пояснений.';
+  function askVision(b64) {
+    if (/^sk-ant/.test(S.aiKey)) {
+      return fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': S.aiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+        body: JSON.stringify({ model: AI_MODEL, max_tokens: 1500, messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } }, { type: 'text', text: VISION_PROMPT }] }] })
+      }).then(function (r) { return r.json().then(function (j) {
+        if (!r.ok) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status));
+        return (j.content || []).map(function (c) { return c.text || ''; }).join('');
+      }); });
+    }
+    var list = (S.geminiModels && S.geminiModels.length) ? S.geminiModels.slice(0, 3) : GEMINI_MODELS;
+    function tryModel(i) {
+      if (i >= list.length) return Promise.reject(new Error('Модели Gemini недоступны'));
+      return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + list[i] + ':generateContent', {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': S.aiKey },
+        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ inline_data: { mime_type: 'image/jpeg', data: b64 } }, { text: VISION_PROMPT }] }], generationConfig: { maxOutputTokens: 2048, temperature: 0.1 } })
+      }).then(function (r) { return r.json().then(function (j) {
+        if (!r.ok) { if (i + 1 < list.length) return tryModel(i + 1); throw new Error((j.error && j.error.message) || ('HTTP ' + r.status)); }
+        var c = j.candidates && j.candidates[0];
+        return ((c && c.content && c.content.parts) || []).map(function (p) { return p.text || ''; }).join('');
+      }); });
+    }
+    return tryModel(0);
+  }
+  function skToNote() {
+    if (!S.sketch.strokes.length) { toast('Лист пустой', 'Сначала напиши что-нибудь'); return; }
+    if (!S.aiKey) { toast('AI не подключён', 'Внизу главного экрана — «Подключить AI». Пока можно отправить картинкой', true); return; }
+    $('sk-status').textContent = 'AI читает лист…';
+    askVision(skImage('image/jpeg').split(',')[1]).then(function (text) {
+      text = String(text || '').trim();
+      if (!text || text === '—') { toast('Текста не нашёл', 'Похоже, на листе только рисунок — отправь его картинкой', true); return; }
+      var n = addNote(text, false, false); n.title = 'С листа'; save();
+      location.hash = '#notes'; setTimeout(function () { openNote(n.id); }, 150);
+      toast('Заметка из листа готова', 'Проверь текст — AI мог ошибиться в почерке');
+    }).catch(function (err) {
+      var msg = String(err && err.message || err);
+      toast(aiErrorTitle(msg), msg.slice(0, 110), true);
+    }).then(function () { if (current() === 'sketch') skStatus(); });
+  }
+  applyTheme();
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { checkReminders(); } });
 
   /* ---------- копия данных: файл без ключей (AI-ключ и ключ синхронизации не попадают) ---------- */
   function backup() {
-    var data = { app: 'dela', v: 1, at: new Date().toISOString(), tasks: S.tasks, notes: S.notes, place: S.place };
+    var data = { app: 'dela', v: 1, at: new Date().toISOString(), tasks: S.tasks, notes: S.notes, place: S.place, sketch: S.sketch };
     var name = 'dela-kopiya-' + today() + '.json';
     var blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
     var file = null;
@@ -958,6 +1214,7 @@
     checkpoint();
     S.tasks = validList(o.tasks, 'title'); S.notes = validList(o.notes, 'body');
     if (typeof o.place === 'string') S.place = o.place;
+    var bs = validSketch(o.sketch); if (bs) { bs.u = Date.now(); S.sketch = bs; }
     save(); renderMain();
     toast('Восстановлено: ' + S.tasks.length + ' дел, ' + S.notes.length + ' заметок', 'Не то — нажми «Вернуть»', false, null, true);
   }
@@ -1026,13 +1283,13 @@
         return fetch(BASE + S.sync.id, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: body });
       }).then(function (r) { if (!r.ok) throw new Error('запись не прошла: ' + r.status); });
     }
-    function rerender() { if (current() === 'notes') renderNotes(); else renderMain(); }
+    function rerender() { if (current() === 'notes') renderNotes(); else if (current() === 'sketch') skRebuild(); else renderMain(); }
     function run() {
       if (!on() || !navigator.onLine) { render(); return Promise.resolve(); }
       if (busy) { again = true; return Promise.resolve(); }
       busy = true;
       return pull().then(function (R) {
-        var before = JSON.stringify([S.tasks, S.notes, S.place, S.aiKey]);
+        var before = JSON.stringify([S.tasks, S.notes, S.place, S.aiKey, S.sketch]);
         if (R) {
           if (S.sync.joining && ((R.tasks || []).length || (R.notes || []).length)) {
             S.tasks = S.tasks.filter(function (x) { return !x.demo; });
@@ -1041,9 +1298,9 @@
           }
           mergeRemote(R);
         }
-        if (JSON.stringify([S.tasks, S.notes, S.place, S.aiKey]) !== before) rerender();
-        var remoteStr = R ? JSON.stringify([R.tasks, R.notes, R.place, R.aiKey]) : '';
-        if (JSON.stringify([S.tasks, S.notes, S.place, S.aiKey]) !== remoteStr) return push();
+        if (JSON.stringify([S.tasks, S.notes, S.place, S.aiKey, S.sketch]) !== before) rerender();
+        var remoteStr = R ? JSON.stringify([R.tasks, R.notes, R.place, R.aiKey, R.sketch]) : '';
+        if (JSON.stringify([S.tasks, S.notes, S.place, S.aiKey, S.sketch]) !== remoteStr) return push();
       }).then(function () {
         S.sync.joining = false; S.sync.last = Date.now(); S.sync.err = ''; store();
       }).catch(function (e) {
