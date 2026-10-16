@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Дела</title>
+<title>Блатной блокнот</title>
 <meta name="theme-color" content="#F6F3EA">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Дела">
+<meta name="apple-mobile-web-app-title" content="Блатной блокнот">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
@@ -29,6 +29,11 @@
 
   <!-- ДЕЛА -->
   <main id="view-main">
+    <div id="sync-banner" class="sync-banner hand-a" hidden>
+      <div id="sb-text" class="sb-text"></div>
+      <button type="button" class="big-btn hand-b" id="sb-btn" data-act="sb-go"></button>
+      <div class="sheet-sub"><button type="button" class="link-btn" id="sb-alt" data-act="sb-alt" hidden></button><button type="button" class="link-btn" data-act="sb-close">Позже</button></div>
+    </div>
     <section id="orb" class="orb-wrap mode-idle" role="img" aria-label="AI">
       <svg class="wind" viewBox="0 0 390 260" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
         <g class="wind-g">

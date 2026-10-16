@@ -3,7 +3,10 @@
 
   /* ---------- утилиты ---------- */
   var KEY = 'dela.v1';
-  var APP_VERSION = '14';
+  /* постоянный адрес приложения: ссылки синхронизации всегда ведут сюда */
+  var CANON = 'https://povarenock141-png.github.io/Telegram-Desktop/dela/';
+  var OLD_HOST = location.hostname === 'raw.githack.com';
+  var APP_VERSION = '15';
   var KINDS = { task: 'задача', deal: 'дело', duty: 'обязанность' };
   var KINDS_ACC = { task: 'задачу', deal: 'дело', duty: 'обязанность' };
   var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -294,7 +297,7 @@
       'Открытые дела: ' + JSON.stringify(tasks) + '\nВыполнено недавно: ' + JSON.stringify(done) + '\nЗаметки: ' + JSON.stringify(notes);
   }
   var AI_SYSTEM = [
-    'Ты — личный AI-помощник Макса, бренд-шефа ресторанов Novikov Group в Баку. Приложение «Дела»: дела, обязанности, заметки, стикеры.',
+    'Ты — личный AI-помощник Макса, бренд-шефа ресторанов Novikov Group в Баку. Приложение «Блатной блокнот»: дела, обязанности, заметки, стикеры.',
     'Пойми, чего хочет Макс, и ответь ТОЛЬКО JSON без пояснений вокруг: {"reply": "...", "actions": [...]}.',
     'reply — коротко по-русски, 1–3 предложения, по делу, без воды. Если это вопрос — ответь на него по существу (используй список дел, если вопрос про них, или свои знания).',
     'actions — что сделать в приложении (может быть пустым):',
@@ -687,12 +690,12 @@
   }
   /* будильник утреннего плана: ежедневное событие в календаре iPhone в 08:00 со ссылкой на приложение */
   function morningAlarm() {
-    var appUrl = location.href.split('#')[0];
+    var appUrl = CANON;
     var lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Dela//RU', 'BEGIN:VEVENT', 'UID:morning-plan@dela',
       'DTSTAMP:' + new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, ''),
       'DTSTART;TZID=Asia/Baku:' + addDays(today(), 1).replace(/-/g, '') + 'T080000',
-      'DURATION:PT10M', 'RRULE:FREQ=DAILY', 'SUMMARY:План дня — открой «Дела»', 'URL:' + appUrl, 'DESCRIPTION:' + appUrl,
-      'BEGIN:VALARM', 'TRIGGER:PT0M', 'ACTION:DISPLAY', 'DESCRIPTION:План дня готов — открой «Дела»', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'];
+      'DURATION:PT10M', 'RRULE:FREQ=DAILY', 'SUMMARY:План дня — открой «Блатной блокнот»', 'URL:' + appUrl, 'DESCRIPTION:' + appUrl,
+      'BEGIN:VALARM', 'TRIGGER:PT0M', 'ACTION:DISPLAY', 'DESCRIPTION:План дня готов — открой «Блатной блокнот»', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'];
     saveIcs(lines, 'plan-8-00.ics');
     S.alarmSet = true; save();
   }
@@ -828,6 +831,9 @@
         if (armed(el)) { checkpoint(); S.tasks = S.tasks.filter(function (x) { return x.daily || !x.done; }); save(); UI.archiveOpen = false; renderMain(); toast('Архив очищен', '', false, null, true); }
         break;
       case 'sync': SYNC.press(); break;
+      case 'sb-go': SYNC.bannerGo(); break;
+      case 'sb-alt': SYNC.bannerAlt(); break;
+      case 'sb-close': SYNC.bannerClose(); break;
       case 'backup': backup(); break;
       case 'restore-file': $('restore-input').click(); break;
       case 'copy-link':
@@ -835,7 +841,7 @@
         (navigator.clipboard ? navigator.clipboard.writeText(lo.value) : Promise.reject()).then(function () { toast('Ссылка скопирована', 'Открой её на другом устройстве'); }, function () { try { document.execCommand('copy'); toast('Ссылка скопирована', ''); } catch (e2) { toast('Скопируй ссылку вручную', ''); } });
         break;
       case 'share-link':
-        if (navigator.share) navigator.share({ title: 'Дела — синхронизация', url: $('link-out').value }).catch(function () {});
+        if (navigator.share) navigator.share({ title: 'Блатной блокнот — синхронизация', url: $('link-out').value }).catch(function () {});
         else toast('Скопируй ссылку', 'Кнопка «Копировать»');
         break;
       case 'sync-off': if (armed(el)) { $('link-sheet').hidden = true; $('sheet-bg').hidden = true; SYNC.off(); } break;
@@ -938,7 +944,7 @@
     var file = null;
     try { file = new File([blob], name, { type: 'application/json' }); } catch (e) { /* старый браузер */ }
     if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-      navigator.share({ files: [file], title: 'Дела — копия' }).then(function () { toast('Копия сохранена', name); }, function () {});
+      navigator.share({ files: [file], title: 'Блатной блокнот — копия' }).then(function () { toast('Копия сохранена', name); }, function () {});
       return;
     }
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
@@ -948,7 +954,7 @@
   function restoreFrom(text) {
     var o;
     try { o = JSON.parse(text); } catch (e) { toast('Файл не читается', 'Нужен файл копии dela-kopiya-….json', true); return; }
-    if (!o || o.app !== 'dela' || !Array.isArray(o.tasks)) { toast('Это не копия «Дел»', 'Выбери файл dela-kopiya-….json', true); return; }
+    if (!o || o.app !== 'dela' || !Array.isArray(o.tasks)) { toast('Это не копия блокнота', 'Выбери файл dela-kopiya-….json', true); return; }
     checkpoint();
     S.tasks = validList(o.tasks, 'title'); S.notes = validList(o.notes, 'body');
     if (typeof o.place === 'string') S.place = o.place;
@@ -1056,44 +1062,107 @@
       else if (s.last) b.textContent = 'Синхронизировано ' + pad(new Date(s.last).getHours()) + ':' + pad(new Date(s.last).getMinutes()) + ' · ссылка';
       else b.textContent = 'Синхронизирую…';
     }
-    function link() { return location.origin + location.pathname + '#sync=' + S.sync.id + '.' + S.sync.k; }
+    function link() { return CANON + '#sync=' + S.sync.id + '.' + S.sync.k; }
     function showLink() {
       $('link-out').value = link();
       $('link-sheet').hidden = false; $('sheet-bg').hidden = false;
     }
+    function create() {
+      var raw = new Uint8Array(32); crypto.getRandomValues(raw);
+      var idb = new Uint8Array(18); crypto.getRandomValues(idb);
+      S.sync = { id: 'dela-' + b64(idb), k: b64(raw) }; cryptoKey = null; store();
+      return run();
+    }
     function press() {
-      if (!on()) {
-        var raw = new Uint8Array(32); crypto.getRandomValues(raw);
-        var idb = new Uint8Array(18); crypto.getRandomValues(idb);
-        S.sync = { id: 'dela-' + b64(idb), k: b64(raw) }; cryptoKey = null; store();
-        run().then(function () {
-          if (S.sync.err) toast('Синхронизация не включилась', S.sync.err, true);
-          else showLink();
-        });
-        return;
-      }
+      if (!on()) { bannerHidden = false; banner('choose'); window.scrollTo(0, 0); return; }
       if (S.sync.err) { run().then(function () { if (S.sync.err) toast('Синхронизация: ошибка', S.sync.err, true); else toast('Синхронизировано', ''); }); return; }
       run(); showLink();
     }
-    function readLink() {
-      var m = location.hash.match(/^#sync=(dela-[A-Za-z0-9_-]+)\.([A-Za-z0-9_-]{40,})$/);
-      if (!m) return;
-      history.replaceState(null, '', location.origin + location.pathname);
-      if (S.sync && S.sync.id === m[1]) { toast('Это устройство уже подключено', ''); return; }
+    var LINK_RE = /#sync=(dela-[A-Za-z0-9_-]+)\.([A-Za-z0-9_-]{40,})/;
+    function join(text) {
+      var m = String(text || '').trim().match(LINK_RE);
+      if (!m) { toast('Это не ссылка синхронизации', 'Она начинается с ' + CANON + '#sync=', true); return false; }
+      if (S.sync && S.sync.id === m[1]) { toast('Это устройство уже подключено', ''); banner(); return true; }
       S.sync = { id: m[1], k: m[2], joining: true }; cryptoKey = null; store();
       toast('Подключаю синхронизацию…', '', true);
       run().then(function () {
         if (S.sync.err) toast('Не удалось подключиться', S.sync.err, true);
         else toast('Синхронизация включена ✓', 'Дела и заметки теперь общие с другим устройством');
+        banner();
+      });
+      return true;
+    }
+    function readLink() {
+      if (!LINK_RE.test(location.hash)) return;
+      var h = location.hash;
+      history.replaceState(null, '', location.origin + location.pathname);
+      join(h);
+    }
+    function pasteJoin() {
+      var manual = function () { ask('Вставь ссылку синхронизации', '', join); };
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        navigator.clipboard.readText().then(function (t) { if (LINK_RE.test(t || '')) join(t); else manual(); }, manual);
+      } else manual();
+    }
+    /* верхняя плашка: переезд со старого адреса или подключение нового устройства */
+    var bannerHidden = false, migrateReady = false;
+    function hasReal() { return S.tasks.concat(S.notes).some(function (x) { return !x.demo; }); }
+    function banner(mode) {
+      var el = $('sync-banner'); if (!el) return;
+      if (!mode) {
+        if (OLD_HOST) mode = 'move';
+        else if (!on() && !hasReal()) mode = 'choose';
+      }
+      if (!mode || bannerHidden) { el.hidden = true; return; }
+      el.dataset.mode = mode;
+      var alt = $('sb-alt');
+      if (mode === 'move') {
+        $('sb-text').textContent = migrateReady
+          ? 'Готово, данные отправлены. Нажми — откроется новый адрес в Safari. Там: «Поделиться» → «На экран Домой». В новой иконке нажми «Вставить ссылку» (она уже будет скопирована). Старую иконку удали, когда увидишь дела в новой.'
+          : 'Блокнот переехал на новый адрес — без лишних страниц и рекламы. Нажми, и дела с заметками переедут вместе с тобой.';
+        $('sb-btn').textContent = migrateReady ? 'Открыть новый блокнот' : 'Перенести';
+        alt.hidden = true;
+      } else {
+        $('sb-text').textContent = 'Ведёшь блокнот на другом устройстве? Скопируй там ссылку синхронизации и нажми «Вставить ссылку» — дела и заметки станут общими. Если это твоё первое устройство — нажми «Это первое устройство».';
+        $('sb-btn').textContent = 'Вставить ссылку';
+        alt.textContent = 'Это первое устройство'; alt.hidden = false;
+      }
+      el.hidden = false;
+    }
+    function bannerGo() {
+      var mode = $('sync-banner').dataset.mode;
+      if (mode === 'move') {
+        if (!migrateReady) {
+          toast('Готовлю перенос…', '', true);
+          (on() ? run() : create()).then(function () {
+            if (S.sync.err) { toast('Не получилось отправить данные', S.sync.err + ' — проверь интернет и нажми ещё раз', true); return; }
+            migrateReady = true; $('toast').hidden = true; banner('move');
+          });
+          return;
+        }
+        var l = link();
+        try { if (navigator.clipboard) navigator.clipboard.writeText(l).catch(function () {}); } catch (e) { /* без буфера: ссылка всё равно в адресе */ }
+        window.open(l, '_blank');
+        return;
+      }
+      pasteJoin();
+    }
+    function bannerAlt() {
+      bannerHidden = true; banner();
+      create().then(function () {
+        if (S.sync.err) toast('Синхронизация не включилась', S.sync.err, true);
+        else showLink();
       });
     }
+    function bannerClose() { bannerHidden = true; banner(); }
     function off() { S.sync = null; cryptoKey = null; store(); render(); toast('Синхронизация выключена на этом устройстве', ''); }
     function schedule() { if (!on()) return; clearTimeout(timer); timer = setTimeout(run, 1500); }
-    return { run: run, schedule: schedule, render: render, press: press, readLink: readLink, off: off, link: link };
+    return { run: run, schedule: schedule, render: render, press: press, readLink: readLink, off: off, link: link, banner: banner, bannerGo: bannerGo, bannerAlt: bannerAlt, bannerClose: bannerClose };
   })();
   window.DelaSync = SYNC;
   SYNC.readLink();
   SYNC.render();
+  SYNC.banner();
   SYNC.run();
   setInterval(function () { if (!document.hidden) SYNC.run(); }, 30e3);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) SYNC.run(); });
