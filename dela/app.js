@@ -3,10 +3,11 @@
 
   /* ---------- утилиты ---------- */
   var KEY = 'dela.v1';
+  var ORB = null;
   /* постоянный адрес приложения: ссылки синхронизации всегда ведут сюда */
   var CANON = 'https://povarenock141-png.github.io/Telegram-Desktop/dela/';
   var OLD_HOST = location.hostname === 'raw.githack.com';
-  var APP_VERSION = '16';
+  var APP_VERSION = '17';
   var KINDS = { task: 'задача', deal: 'дело', duty: 'обязанность' };
   var KINDS_ACC = { task: 'задачу', deal: 'дело', duty: 'обязанность' };
   var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -238,8 +239,15 @@
   function taskReply(t) {
     return 'Добавил ' + KINDS_ACC[t.kind] + ': «' + t.title + '»' + (t.daily ? ', ежедневно' : t.date !== today() ? ', ' + dateLabel(t.date) : '') + (t.time ? ', в ' + t.time : '') + (t.due ? ', до ' + t.due : '') + '.';
   }
+  /* шар «говорит», пока появляется ответ */
+  var speakTimer = null;
+  function orbSpeak(text) {
+    if (!ORB || UI.mode !== 'idle') return;
+    ORB.set('speak'); clearTimeout(speakTimer);
+    speakTimer = setTimeout(function () { if (UI.mode === 'idle') ORB.set('idle'); }, Math.min(4000, 900 + String(text || '').length * 35));
+  }
   function showReply(text, heard) {
-    UI.heard = heard || ''; UI.reply = text;
+    UI.heard = heard || ''; UI.reply = text; setTimeout(function () { orbSpeak(text); }, 0);
     if (current() === 'notes') { renderNotes(); toast('AI', text); } else renderMain();
   }
   function command(text, source) {
@@ -505,6 +513,7 @@
     UI.mode = m;
     var orb = $('orb');
     orb.className = 'orb-wrap mode-' + m;
+    if (ORB) ORB.set(m);
     orb.setAttribute('aria-label', 'AI: ' + (m === 'listen' ? 'слушает' : m === 'think' ? 'думает' : 'готов'));
     ['anim-freq', 'anim-gust'].forEach(function (id) {
       var a = $(id); if (!a) return;
@@ -522,7 +531,7 @@
   function fillWave() {
     var d = 'M0 0 Q15 -6 30 0';
     for (var x = 60; x <= 300; x += 30) d += ' T' + x + ' 0';
-    $('fillwave').setAttribute('d', d + ' L300 240 L0 240 Z');
+    if ($('fillwave')) $('fillwave').setAttribute('d', d + ' L300 240 L0 240 Z');
   }
 
   /* ---------- отрисовка: Дела ---------- */
@@ -537,7 +546,7 @@
     var tt = todayTasks();
     var done = tt.filter(isDone).length;
     var pct = tt.length ? done / tt.length : 0;
-    $('level').setAttribute('transform', 'translate(0 ' + Math.round(180 - pct * 125) + ')');
+    if ($('level')) $('level').setAttribute('transform', 'translate(0 ' + Math.round(180 - pct * 125) + ')');
 
     if (UI.mode === 'idle') {
       $('ai-text').textContent = UI.reply || hello();
@@ -1039,6 +1048,7 @@
     var m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', dark ? '#15141F' : '#F6F3EA');
     $('theme-btn').textContent = 'Тема: ' + { auto: 'авто', light: 'светлая', dark: 'тёмная' }[t];
     if (current() === 'sketch') skRebuild();
+    if (ORB) ORB.light(!dark);
   }
 
   /* ---------- лист: рисунок пальцем, хранится векторами, синхронизируется ---------- */
@@ -1189,6 +1199,7 @@
       toast(aiErrorTitle(msg), msg.slice(0, 110), true);
     }).then(function () { if (current() === 'sketch') skStatus(); });
   }
+  try { if (window.GalaxyOrb) ORB = window.GalaxyOrb($('orb-cv'), { energy: 1.2 }); } catch (e) { ORB = null; }
   applyTheme();
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { checkReminders(); } });
 

@@ -33,7 +33,8 @@ main{display:flex;flex-direction:column;gap:18px}
 @keyframes toastIn{from{transform:translate(-50%,-16px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
 
 /* orb */
-.orb-wrap{position:relative;height:260px}
+.orb-wrap{position:relative;height:290px;display:flex;align-items:center;justify-content:center}
+.orb-cv{display:block;width:300px;height:300px;max-width:100%}
 .wind{position:absolute;left:-16px;top:0;width:calc(100% + 32px);height:260px}
 .wind-g{fill:none;stroke:var(--ink);stroke-linecap:round}
 .w-base{stroke-width:1;opacity:.18}
