@@ -1,4 +1,4 @@
-var CACHE = 'dela-v17';
+var CACHE = 'dela-v18';
 var ASSETS = ['./', 'index.html', 'style.css', 'orb.js', 'app.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', function (e) {

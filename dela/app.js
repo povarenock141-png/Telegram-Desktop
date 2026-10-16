@@ -7,7 +7,7 @@
   /* постоянный адрес приложения: ссылки синхронизации всегда ведут сюда */
   var CANON = 'https://povarenock141-png.github.io/Telegram-Desktop/dela/';
   var OLD_HOST = location.hostname === 'raw.githack.com';
-  var APP_VERSION = '17';
+  var APP_VERSION = '18';
   var KINDS = { task: 'задача', deal: 'дело', duty: 'обязанность' };
   var KINDS_ACC = { task: 'задачу', deal: 'дело', duty: 'обязанность' };
   var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -1199,7 +1199,7 @@
       toast(aiErrorTitle(msg), msg.slice(0, 110), true);
     }).then(function () { if (current() === 'sketch') skStatus(); });
   }
-  try { if (window.GalaxyOrb) ORB = window.GalaxyOrb($('orb-cv'), { energy: 1.2 }); } catch (e) { ORB = null; }
+  try { if (window.AIOrb) ORB = window.AIOrb($('orb-cv'), { energy: 1.3 }); } catch (e) { ORB = null; }
   applyTheme();
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { checkReminders(); } });
 
